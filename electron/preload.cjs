@@ -49,4 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelClose: () => ipcRenderer.send('app:close-cancelled'),
   /** 注册拖入文件回调（preload 监听 drop 事件后调用） */
   onFileDropped: (fn) => { _onDroppedFile = fn },
+  // 导出功能
+  exportHtml: (title, html) => ipcRenderer.invoke('export:html', title, html),
+  exportPdf: (title, html) => ipcRenderer.invoke('export:pdf', title, html),
+  exportImage: (title, dataUrl) => ipcRenderer.invoke('export:image', title, dataUrl),
+  writeFile: (filePath, content) => ipcRenderer.invoke('file:write', filePath, content),
 })

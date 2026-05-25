@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "description": "跨平台 Markdown 编辑器，支持实时预览、文件管理、图片粘贴",
   "author": "Markdown Editor Team",
   "type": "module",
@@ -111,7 +111,9 @@
     "@highlightjs/vue-plugin": "^2.1.0",
     "element-plus": "^2.9.0",
     "highlight.js": "^11.11.0",
+    "html-to-image": "^1.11.13",
     "marked": "^15.0.0",
+    "mermaid": "^11.15.0",
     "turndown": "^7.2.4",
     "vue": "^3.4.0"
   },

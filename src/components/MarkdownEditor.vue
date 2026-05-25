@@ -409,7 +409,7 @@ function handleFileCmd(cmd:string){const t=getTa();if(!t)return
   }
 }
 
-const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust','sql','html','css','bash','json','yaml','xml','shell']
+const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust','sql','html','css','bash','json','yaml','xml','shell','mermaid']
 </script>
 
 <template>

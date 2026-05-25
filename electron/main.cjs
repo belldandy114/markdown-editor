@@ -356,6 +356,83 @@ app.on('activate', () => {
   }
 })
 
+// ========== 导出 IPC ==========
+
+/** 导出 HTML */
+ipcMain.handle('export:html', async (_event, title, html) => {
+  const win = BrowserWindow.getFocusedWindow()
+  if (!win) return null
+  const result = await dialog.showSaveDialog(win, {
+    title: '导出 HTML',
+    defaultPath: `${title}.html`,
+    filters: [{ name: 'HTML 文件', extensions: ['html'] }],
+  })
+  if (result.canceled || !result.filePath) return null
+  try {
+    fs.writeFileSync(result.filePath, html, 'utf-8')
+    return result.filePath
+  } catch { return null }
+})
+
+/** 导出 PDF */
+ipcMain.handle('export:pdf', async (_event, title, html) => {
+  const win = BrowserWindow.getFocusedWindow()
+  if (!win) return null
+  const result = await dialog.showSaveDialog(win, {
+    title: '导出 PDF',
+    defaultPath: `${title}.pdf`,
+    filters: [{ name: 'PDF 文件', extensions: ['pdf'] }],
+  })
+  if (result.canceled || !result.filePath) return null
+  try {
+    // 创建隐藏窗口渲染 HTML → PDF
+    const bw = new BrowserWindow({
+      width: 900, height: 600,
+      show: false,
+      webPreferences: { sandbox: true, contextIsolation: true }
+    })
+    const htmlContent = html
+    await bw.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`)
+    await new Promise(r => bw.webContents.once('did-finish-load', r))
+    const pdfBuf = await bw.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+    })
+    bw.close()
+    fs.writeFileSync(result.filePath, pdfBuf)
+    return result.filePath
+  } catch (e) {
+    console.error('[export:pdf]', e)
+    return null
+  }
+})
+
+/** 导出图片 */
+ipcMain.handle('export:image', async (_event, title, dataUrl) => {
+  const win = BrowserWindow.getFocusedWindow()
+  if (!win) return null
+  const result = await dialog.showSaveDialog(win, {
+    title: '导出图片',
+    defaultPath: `${title}.png`,
+    filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+  })
+  if (result.canceled || !result.filePath) return null
+  try {
+    const commaIdx = dataUrl.indexOf(',')
+    const raw = commaIdx >= 0 ? dataUrl.substring(commaIdx + 1) : dataUrl
+    fs.writeFileSync(result.filePath, Buffer.from(raw, 'base64'))
+    return result.filePath
+  } catch { return null }
+})
+
+/** 直接写入文件（用于覆盖导出） */
+ipcMain.handle('file:write', async (_event, filePath, content) => {
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8')
+    return true
+  } catch { return false }
+})
+
 /** 文件关联打开（macOS） */
 app.on('open-file', (_event, filePath) => {
   _event.preventDefault()
