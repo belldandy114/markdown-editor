@@ -35,7 +35,8 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           ELECTRON: 'true'
-        run: npx electron-builder --mac
+          GH_TOKEN: 'dummy'
+        run: npx electron-builder --mac --publish never
 
       - name: List release artifacts
         run: ls -la release/
