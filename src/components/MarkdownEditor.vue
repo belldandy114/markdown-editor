@@ -36,10 +36,16 @@ function domReplace(s: number, e: number, text: string, done?: (ta: HTMLTextArea
   if (done) requestAnimationFrame(() => done(t))
 }
 
-function replaceRange(s: number, e: number, text: string): void {
+function replaceRange(s: number, e: number, text: string, cursorPos?: number): void {
   snapshot(true)
   content.value = content.value.substring(0, s) + text + content.value.substring(e)
   updateContent(content.value); updateStats(content.value)
+  // 恢复光标（preventScroll 防止 focus 触发页面跳转）
+  const pos = cursorPos ?? Math.min(s + text.length, content.value.length)
+  nextTick(() => {
+    const t = getTa()
+    if (t) { t.focus({preventScroll:true}); t.selectionStart = t.selectionEnd = pos }
+  })
 }
 
 function insertAtCursor(text: string): void {
@@ -51,7 +57,7 @@ function insertAtCursor(text: string): void {
   }
   domReplace(sel.s, sel.e, insertText, (ta) => {
     const pos = cursorPos >= 0 ? sel.s + cursorPos : sel.s + insertText.length
-    ta.focus()
+    ta.focus({preventScroll:true})
     ta.selectionStart = ta.selectionEnd = pos
   })
 }
@@ -60,7 +66,7 @@ function wrapSel(before: string, after: string): void {
   const sel = getSel(); if (!sel) return
   const st = content.value.substring(sel.s, sel.e) || '内容'
   domReplace(sel.s, sel.e, before + st + after, (ta) => {
-    ta.focus()
+    ta.focus({preventScroll:true})
     ta.selectionStart = sel.s + before.length
     ta.selectionEnd = sel.s + before.length + st.length
   })
@@ -70,7 +76,7 @@ function linePref(prefix: string): void {
   const t = getTa(); if (!t) return; const s = t.selectionStart
   const ls = content.value.lastIndexOf('\n', s - 1) + 1
   domReplace(ls, ls, prefix, (ta) => {
-    ta.focus()
+    ta.focus({preventScroll:true})
     ta.selectionStart = ta.selectionEnd = s + prefix.length
   })
 }
@@ -99,7 +105,7 @@ const fmt: Record<string, Function> = {
       if(ck)replaceRange(ls,s,i+mk+(ck.includes('x')?' [ ] ':' [x] ')+r)
       else replaceRange(ls,s,i+mk+' [ ] '+line.trim())
     }else{const tr=line.trimStart();replaceRange(ls,s,line.substring(0,line.length-tr.length)+'- [ ] '+tr)}
-    nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=s+6})
+    nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+6})
   },
   tableOp(op: string) {
     const t=getTa();if(!t)return;const cursorLine=content.value.substring(0,t.selectionStart).split('\n').length-1
@@ -134,17 +140,17 @@ const fmt: Record<string, Function> = {
   space2tabLead(){const r=getSel();if(!r)return;replaceRange(r.s,r.e,content.value.substring(r.s,r.e).split('\n').map(l=>l.replace(/^(\s+)/,m=>'\t'.repeat(Math.floor(m.length/2)))).join('\n'))},
   rmEmpty(){const r=getSel();if(!r)return;replaceRange(r.s,r.e,content.value.substring(r.s,r.e).split('\n').filter(l=>l.trim()).join('\n'))},
   rmDup(){const s=new Set<string>();const r=getSel()||{s:0,e:content.value.length};if(r.s===r.e){r.s=0;r.e=content.value.length}replaceRange(r.s,r.e,content.value.substring(r.s,r.e).split('\n').filter(l=>{if(s.has(l))return false;s.add(l);return true}).join('\n'))},
-  markDup(){const s=new Map<string,number>();const lines=content.value.split('\n');const res=lines.map(l=>{const k=l.trim();if(!k)return l;const c=(s.get(k)||0)+1;s.set(k,c);return c>1?l+' ← 重复':l});content.value=res.join('\n');updateContent(content.value);updateStats(content.value)},
-  copyLine(){const t=getTa();if(!t)return;const s=t.selectionStart;const ls=content.value.lastIndexOf('\n',s-1)+1;const le=content.value.indexOf('\n',s);const e=le===-1?content.value.length:le;const l=content.value.substring(ls,e);const nv=content.value.substring(0,e)+'\n'+l+content.value.substring(e);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=e+1+(s-ls)})},
+  markDup(){const t=getTa();const saved=t?.selectionStart??0;const s=new Map<string,number>();const lines=content.value.split('\n');const res=lines.map(l=>{const k=l.trim();if(!k)return l;const c=(s.get(k)||0)+1;s.set(k,c);return c>1?l+' ← 重复':l});content.value=res.join('\n');updateContent(content.value);updateStats(content.value);nextTick(()=>{if(t){t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=Math.min(saved,content.value.length)}})},
+  copyLine(){const t=getTa();if(!t)return;const s=t.selectionStart;const ls=content.value.lastIndexOf('\n',s-1)+1;const le=content.value.indexOf('\n',s);const e=le===-1?content.value.length:le;const l=content.value.substring(ls,e);const nv=content.value.substring(0,e)+'\n'+l+content.value.substring(e);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=e+1+(s-ls)})},
 }
 
 const showSearch=ref(false);const sq=ref('');const smi=ref(0);const sma=ref<number[]>([]);const replaceText=ref('')
 function onSearchChange(v:any){sq.value=typeof v==='string'?v:'';doSearch()}
-function toggleSearch(){showSearch.value=!showSearch.value;if(showSearch.value)nextTick(()=>document.getElementById('es')?.focus());else{sq.value='';sma.value=[];smi.value=0}}
+function toggleSearch(){showSearch.value=!showSearch.value;if(showSearch.value)nextTick(()=>document.getElementById('es')?.focus({preventScroll:true}));else{sq.value='';sma.value=[];smi.value=0}}
 function doSearch(){if(!sq.value||!content.value){sma.value=[];smi.value=0;return}const q=sq.value.toLowerCase();const tx=content.value.toLowerCase();const m:number[]=[];let i=0;while(true){const p=tx.indexOf(q,i);if(p===-1)break;m.push(p);i=p+1}sma.value=m;smi.value=m.length?0:0;if(m.length)hl(m[0],q.length)}
-function hl(p:number,l:number){const t=getTa();if(!t)return;t.focus();t.selectionStart=p;t.selectionEnd=p+l;t.scrollTop=Math.max(0,(content.value.substring(0,p).split('\n').length-1)*22-100)}
-function nx(){if(!sma.value.length)return;smi.value=(smi.value+1)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus(),0)}
-function pv(){if(!sma.value.length)return;smi.value=(smi.value-1+sma.value.length)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus(),0)}
+function hl(p:number,l:number){const t=getTa();if(!t)return;t.focus({preventScroll:true});t.selectionStart=p;t.selectionEnd=p+l;t.scrollTop=Math.max(0,(content.value.substring(0,p).split('\n').length-1)*22-100)}
+function nx(){if(!sma.value.length)return;smi.value=(smi.value+1)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus({preventScroll:true}),0)}
+function pv(){if(!sma.value.length)return;smi.value=(smi.value-1+sma.value.length)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus({preventScroll:true}),0)}
 function replaceOne(){if(!sma.value.length||!sq.value)return;const pos=sma.value[smi.value];saveUndo();const rep=replaceText.value;const nv=content.value.substring(0,pos)+rep+content.value.substring(pos+sq.value.length);content.value=nv;updateContent(nv);updateStats(nv);sma.value=sma.value.slice(1).map(m=>m-pos+pos+rep.length-(sq.value.length-rep.length));smi.value=0;if(sma.value.length)hl(sma.value[0],rep.length)}
 function replaceAll(){if(!sma.value.length||!sq.value)return;saveUndo();const q=sq.value;const rep=replaceText.value;let result='';let last=0;let cnt=0;for(const pos of[...sma.value]){result+=content.value.substring(last,pos)+rep;last=pos+q.value.length;cnt++}result+=content.value.substring(last);content.value=result;updateContent(result);updateStats(result);sma.value=[];smi.value=0}
 
@@ -255,7 +261,7 @@ function ca(a:string){hc();const t=getTa();if(!t)return
               const ext=blob.type.split('/')[1]||'png';const name=`image-${Date.now()}.${ext}`
               const r=new FileReader();r.onload=async()=>{
                 const fp=await window.electronAPI?.saveImage(workspaceDir.value,name,r.result)
-                if(fp){const rel=`.assets/${name}`;const s=t.selectionStart,e=t.selectionEnd;replaceRange(s,e,`![${name}](${rel})`);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=s+rel.length+name.length+5})}
+                if(fp){const rel=`.assets/${name}`;const s=t.selectionStart,e=t.selectionEnd;replaceRange(s,e,`![${name}](${rel})`);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+rel.length+name.length+5})}
               };r.readAsDataURL(blob)
             }
           });return}
@@ -274,7 +280,7 @@ function ca(a:string){hc();const t=getTa();if(!t)return
   }
   map[a]?.()
   // 恢复编辑器焦点和选区
-  nextTick(()=>{const t=getTa();if(t){const s=t.selectionStart;t.focus();t.selectionStart=t.selectionEnd=s}})
+  nextTick(()=>{const t=getTa();if(t){const s=t.selectionStart;t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s}})
 }
 onMounted(()=>{
   document.addEventListener('click',hc)
@@ -292,7 +298,7 @@ function pasteDataImage(s:number,e:number,tx:string):void{
   const ext=m?m[1].toLowerCase():'png'
   const fn=`image-${Date.now()}.${ext==='jpeg'?'jpg':ext}`
   window.electronAPI?.saveImage(workspaceDir.value,fn,tx).then(fp=>{const t=getTa()
-    if(fp&&t){const r=`.assets/${fn}`;replaceRange(s,e,`![${fn}](${r})`);t.focus();t.selectionStart=t.selectionEnd=s+r.length+fn.length+5}
+    if(fp&&t){const r=`.assets/${fn}`;replaceRange(s,e,`![${fn}](${r})`);t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+r.length+fn.length+5}
     else ElMessage.warning('粘贴图片保存失败')
   })
 }
@@ -300,7 +306,7 @@ function pasteDataImage(s:number,e:number,tx:string):void{
 function savePastedBlob(s:number,e:number,blob:Blob,name:string){
   const reader=new FileReader();reader.onload=async()=>{
     const fp=await window.electronAPI?.saveImage(workspaceDir.value,name,reader.result)
-    if(fp){const r=`.assets/${name}`;replaceRange(s,e,`![${name}](${r})`);nextTick(()=>{const t=getTa();if(t){t.focus();t.selectionStart=t.selectionEnd=s+r.length+name.length+5}})}
+    if(fp){const r=`.assets/${name}`;replaceRange(s,e,`![${name}](${r})`);nextTick(()=>{const t=getTa();if(t){t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+r.length+name.length+5}})}
   };reader.readAsDataURL(blob)
 }
 function hp(ev:ClipboardEvent){ev.preventDefault();const t=getTa();if(!t)return;const s=t.selectionStart,e=t.selectionEnd
@@ -316,7 +322,7 @@ function hp(ev:ClipboardEvent){ev.preventDefault();const t=getTa();if(!t)return;
   const tx=(ev.clipboardData?.getData('text/plain')||'').trim()
   if(tx.startsWith('data:image/')){pasteDataImage(s,e,tx);return}
   // 4) 纯文本
-  replaceRange(s,e,tx);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=s+tx.length})}
+  replaceRange(s,e,tx);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+tx.length})}
 
 let undoDebounce:ReturnType<typeof setTimeout>|null=null
 function updateStats(text:string){wordCount.value=text.replace(/\s+/g,'').length;lineCount.value=text.split('\n').length;lineNumbers.value=Array.from({length:lineCount.value},(_,i)=>i+1)}function snapshot(clearRedo?:boolean){undoStack.push(content.value);if(undoStack.length>MAX_UNDO)undoStack.shift();if(clearRedo)redoStack.length=0}
@@ -349,14 +355,14 @@ function hk(e:KeyboardEvent){const c=e.ctrlKey||e.metaKey
   if(c&&e.key==='z'&&e.shiftKey){e.preventDefault();redo();return}
   if(c&&e.key==='y'){e.preventDefault();redo();return}
   if(e.key==='Tab'){e.preventDefault();const t=getTa();if(!t)return;const s=t.selectionStart,en=t.selectionEnd
-    if(e.shiftKey){const ls=content.value.lastIndexOf('\n',s-1)+1;const ln=content.value.substring(ls,en);const nl=ln.replace(/^(\s{0,2})/,'');replaceRange(ls,en,nl);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=ls+(s-ls-(ln.length-nl.length))})}
-    else{if(s===en){const nv=content.value.substring(0,s)+'  '+content.value.substring(en);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=s+2})}else{insertAtCursor('  ')}}
+    if(e.shiftKey){const ls=content.value.lastIndexOf('\n',s-1)+1;const ln=content.value.substring(ls,en);const nl=ln.replace(/^(\s{0,2})/,'');replaceRange(ls,en,nl);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=ls+(s-ls-(ln.length-nl.length))})}
+    else{if(s===en){const nv=content.value.substring(0,s)+'  '+content.value.substring(en);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+2})}else{insertAtCursor('  ')}}
     return}
   if(e.key==='Enter'&&!e.shiftKey&&!c){const t=getTa();if(!t)return;const st=t.selectionStart;const ls=content.value.lastIndexOf('\n',st-1)+1;const cl=content.value.substring(ls,st)
-    const ol=cl.match(/^(\d+)\.\s(.*)$/);if(ol){e.preventDefault();const n=parseInt(ol[1]),r=ol[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=ls})}else{const nn=n+1;const nv=content.value.substring(0,st)+'\n'+nn+'. '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();const p=st+1+String(nn).length+2;t.selectionStart=t.selectionEnd=p})};return}
-    const ul=cl.match(/^([\s]*[-*+])\s(.*)$/);if(ul){e.preventDefault();const p=ul[1],r=ul[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n'+p+' '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();const p2=st+1+p.length+1;t.selectionStart=t.selectionEnd=p2})};return}
-    const qt=cl.match(/^>\s(.*)$/);if(qt){e.preventDefault();const r=qt[1];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n> '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=st+3})};return}
-    const tk=cl.match(/^(\s*[-*+]\s\[[ x]\])\s(.*)$/);if(tk){e.preventDefault();const p=tk[1],r=tk[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n'+p+' '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus();const p2=st+1+p.length+1;t.selectionStart=t.selectionEnd=p2})};return}
+    const ol=cl.match(/^(\d+)\.\s(.*)$/);if(ol){e.preventDefault();const n=parseInt(ol[1]),r=ol[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=ls})}else{const nn=n+1;const nv=content.value.substring(0,st)+'\n'+nn+'. '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});const p=st+1+String(nn).length+2;t.selectionStart=t.selectionEnd=p})};return}
+    const ul=cl.match(/^([\s]*[-*+])\s(.*)$/);if(ul){e.preventDefault();const p=ul[1],r=ul[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n'+p+' '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});const p2=st+1+p.length+1;t.selectionStart=t.selectionEnd=p2})};return}
+    const qt=cl.match(/^>\s(.*)$/);if(qt){e.preventDefault();const r=qt[1];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n> '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=st+3})};return}
+    const tk=cl.match(/^(\s*[-*+]\s\[[ x]\])\s(.*)$/);if(tk){e.preventDefault();const p=tk[1],r=tk[2];if(r.trim()===''){const nv=content.value.substring(0,ls)+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=ls})}else{const nv=content.value.substring(0,st)+'\n'+p+' '+content.value.substring(st);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});const p2=st+1+p.length+1;t.selectionStart=t.selectionEnd=p2})};return}
   }
 }
 function hs2(){if(isLocked())return;const t=textareaRef.value;if(!t)return;const el=t.closest('.editor-panel')?.querySelector('.lns');if(el)el.scrollTop=t.scrollTop;const ratio=t.scrollTop/(t.scrollHeight-t.clientHeight||1);setEditorScrollRatio(ratio)}
@@ -382,7 +388,7 @@ onHeadingJump((anchorId)=>{
     // 标题行的内容范围：#后面空格到行尾
     const hdrStart=start+lines[i].indexOf('# ')
     const lineEnd=start+lines[i].length
-    t.focus();requestAnimationFrame(()=>{t.selectionStart=hdrStart+2;t.selectionEnd=lineEnd})
+    t.focus({preventScroll:true});requestAnimationFrame(()=>{t.selectionStart=hdrStart+2;t.selectionEnd=lineEnd})
     break}}}
 })
 
@@ -461,7 +467,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='tbl')fmt.table();else if(v==='codeblock'){fmt.codeBlock();}else fmt[v]?.();nextTick(()=>getTa()?.focus())}" @visible-change="(v:boolean)=>{if(!v)nextTick(()=>getTa()?.focus())}">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='tbl')fmt.table();else if(v==='codeblock'){fmt.codeBlock();}else fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="(v:boolean)=>{if(!v)nextTick(()=>getTa()?.focus({preventScroll:true}))}">
       <el-button size="small" text class="tb-btn">插入 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="bold">加粗 (Ctrl+B)</el-dropdown-item>
@@ -476,14 +482,14 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{fmt.codeBlock(v);nextTick(()=>getTa()?.focus())}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{fmt.codeBlock(v);nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">代码块 ▾</el-button>
       <template #dropdown><el-dropdown-menu class="code-lang-menu">
         <el-dropdown-item v-for="l in codeLangs" :key="l" :command="l">{{ l }}</el-dropdown-item>
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='h')fmt.para();else fmt.heading(v);nextTick(()=>getTa()?.focus())}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='h')fmt.para();else fmt.heading(v);nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">格式 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="1">标题 1 (Ctrl+1)</el-dropdown-item>
@@ -496,7 +502,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{(fmt as any)[v]?.();nextTick(()=>getTa()?.focus())}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{(fmt as any)[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">列表 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="ul">• 无序列表 (Ctrl+Shift+U)</el-dropdown-item>
@@ -506,7 +512,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='in-tbl')fmt.table();else fmt.tableOp(v);nextTick(()=>getTa()?.focus())}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='in-tbl')fmt.table();else fmt.tableOp(v);nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">⊞ 表格 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="in-tbl">⊞ 插入表格</el-dropdown-item>
@@ -523,7 +529,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleSearch();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus());return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus());return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus());return}fmt[v]?.();nextTick(()=>getTa()?.focus())}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleSearch();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus({preventScroll:true}));return}fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">工具 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="theme">{{ theme === 'dark' ? '☀️ 浅色主题' : '🌙 深色主题' }}</el-dropdown-item>

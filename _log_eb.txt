@@ -1,0 +1,20 @@
+  • electron-builder  version=26.8.1 os=10.0.19045
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=42.1.0 arch=x64 buildFromSource=false workspaceRoot=E:\test_cases\markdown-editor projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=42.1.0 appOutDir=release\win-unpacked
+  • searching for node modules  pm=npm searchDir=E:\test_cases\markdown-editor
+  • duplicate dependency references  dependencies=["vue@3.5.34","vue@3.5.34","vue@3.5.34","vue@3.5.34","@types/lodash-es@4.17.12","vue@3.5.34","@types/d3-interpolate@3.0.4","d3-interpolate@3.0.1","d3-drag@3.0.0","d3-interpolate@3.0.1","d3-transition@3.0.1","d3-array@3.2.4","d3-dsv@3.0.1","d3-array@3.2.4","d3-interpolate@3.0.1","d3-array@3.2.4","d3-interpolate@3.0.1","d3-time-format@4.1.0","d3-time@3.1.0","d3-time@3.1.0","d3-array@3.2.4","d3-transition@3.0.1","d3-drag@3.0.0","d3-interpolate@3.0.1","d3-transition@3.0.1","d3@7.9.0","@babel/parser@7.29.3","@vue/compiler-core@3.5.34","@vue/compiler-dom@3.5.34","@vue/compiler-dom@3.5.34","@vue/reactivity@3.5.34","@vue/compiler-ssr@3.5.34","vue@3.5.34"]
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\Markdown Editor.exe
+  ⨯ cannot execute  cause=exit status 1
+                    errorOut=Fatal error: Unable to commit changes
+
+                    command='C:\Users\Administrator\AppData\Local\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0\rcedit-x64.exe' 'E:\test_cases\markdown-editor\release\win-unpacked\Markdown Editor.exe' --set-version-string FileDescription 'Markdown Editor' --set-version-string ProductName 'Markdown Editor' --set-version-string LegalCopyright 'Copyright © 2026 Markdown Editor Team' --set-file-version 1.0.7 --set-product-version 1.0.7.0 --set-version-string InternalName 'Markdown Editor' --set-version-string OriginalFilename '' --set-version-string CompanyName 'Markdown Editor Team' --set-icon 'E:\test_cases\markdown-editor\icon.ico'
+                    workingDir=
+  • signing with signtool.exe  path=release\win-unpacked\Markdown Editor.exe
+  • building        target=nsis file=release\Markdown编辑器-v1.0.7-安装包.exe archs=x64 oneClick=false perMachine=false
+  • signing with signtool.exe  path=release\win-unpacked\resources\elevate.exe
+  • signing with signtool.exe  path=release\Markdown编辑器-v1.0.7-安装包.__uninstaller.exe
+  • signing with signtool.exe  path=release\Markdown编辑器-v1.0.7-安装包.exe
+  • building block map  blockMapFile=release\Markdown编辑器-v1.0.7-安装包.exe.blockmap
