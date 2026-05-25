@@ -293,7 +293,7 @@ function createWindow() {
   win.on('close', (e) => {
     if (isDirty) { e.preventDefault(); win.webContents.send('app:confirm-close') }
   })
-  ipcMain.on('app:close-confirmed', () => { isDirty = false; win.close() })
+  ipcMain.on('app:close-confirmed', (_e) => { isDirty = false; const w = BrowserWindow.fromWebContents(_e.sender); if (w && !w.isDestroyed()) w.close() })
   ipcMain.on('app:close-cancelled', () => {})
 
   if (isDev) {
