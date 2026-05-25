@@ -44,10 +44,9 @@
       ],
       "icon": "build/icon.png",
       "category": "public.app-category.productivity",
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "artifactName": "Markdown编辑器-v${version}-macOS-${arch}.${ext}",
-      "entitlements": "build/entitlements.mac.plist",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
