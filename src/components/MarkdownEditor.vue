@@ -27,7 +27,7 @@ function domReplace(s: number, e: number, text: string, done?: (ta: HTMLTextArea
   const t = getTa()
   if (!t) return
   snapshot(true)
-  t.setRangeText(text, s, e, 'end')
+  t.setRangeText(text, s, e, 'preserve')
   // 同步给 Vue（会触发 v-model 更新 textarea.value 并重置光标）
   content.value = t.value
   updateContent(content.value)
