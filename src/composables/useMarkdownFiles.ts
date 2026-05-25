@@ -1,0 +1,346 @@
+import { ref, computed } from 'vue'
+import type { MarkdownFile } from '@/types'
+import { ElMessage, ElMessageBox } from 'element-plus'
+
+const WORKSPACE_KEY = 'markdown-editor-workspace'
+const ACTIVE_FILE_KEY = 'markdown-editor-active-file'
+
+// ========== 模块级单例状态 ==========
+
+const files = ref<MarkdownFile[]>([])
+const activeFileId = ref<string | null>(null)
+const workspaceDir = ref('')
+const loading = ref(true)
+const searchQuery = ref('')
+const dirty = ref(false)
+const editorScrollRatio = ref(0)
+const previewScrollRatio = ref(0)
+let _scrollLock = false
+function lockScroll() { _scrollLock = true; setTimeout(() => { _scrollLock = false }, 30) }
+function isLocked() { return _scrollLock }
+
+function setEditorScrollRatio(r: number) { editorScrollRatio.value = r }
+function setPreviewScrollRatio(r: number) { previewScrollRatio.value = r }
+
+// 大纲跳转：全局事件回调（比 reactive watch 可靠）
+const headingCallbacks: ((id: string) => void)[] = []
+function onHeadingJump(fn: (id: string) => void) { headingCallbacks.push(fn) }
+function jumpToHeading(id: string) { headingCallbacks.forEach(fn => fn(id)) }
+function removeHeadingJump(fn: (id: string) => void) {
+  const i = headingCallbacks.indexOf(fn); if (i >= 0) headingCallbacks.splice(i, 1)
+}
+
+// ========== 工具函数 ==========
+
+/** 根据文件路径生成 id */
+function pathToId(filePath: string): string {
+  let hash = 0
+  for (let i = 0; i < filePath.length; i++) {
+    hash = ((hash << 5) - hash) + filePath.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash).toString(36)
+}
+
+/** 获取窗口 API */
+function api() {
+  return window.electronAPI!
+}
+
+// ========== 计算属性 ==========
+
+const activeFile = computed<MarkdownFile | undefined>(() =>
+  files.value.find((f) => f.id === activeFileId.value),
+)
+
+const filteredFiles = computed(() => {
+  if (!searchQuery.value.trim()) return files.value
+  const q = searchQuery.value.toLowerCase()
+  return files.value.filter((f) => f.name.toLowerCase().includes(q))
+})
+
+// ========== 初始化 ==========
+
+async function init(): Promise<void> {
+  loading.value = true
+  try {
+    // 1. 读取工作目录
+    const saved = localStorage.getItem(WORKSPACE_KEY)
+    if (saved) {
+      workspaceDir.value = saved
+    } else {
+      const defaultDir = await api().getDefaultWorkspace()
+      workspaceDir.value = defaultDir
+      localStorage.setItem(WORKSPACE_KEY, defaultDir)
+    }
+
+    // 2. 加载文件列表（不含内容）
+    await loadFiles()
+
+    // 3. 恢复上次打开的文件
+    const savedId = localStorage.getItem(ACTIVE_FILE_KEY)
+    if (savedId && files.value.some((f) => f.id === savedId)) {
+      activeFileId.value = savedId
+      // 读取文件内容
+      const file = files.value.find((f) => f.id === savedId)
+      if (file) {
+        file.content = await api().readFile(file.path)
+      }
+    } else if (files.value.length > 0) {
+      activeFileId.value = files.value[0].id
+      files.value[0].content = await api().readFile(files.value[0].path)
+    }
+  } catch (err) {
+    ElMessage.error('初始化失败：' + String(err))
+  } finally {
+    loading.value = false
+  }
+}
+
+// ========== 工作目录 ==========
+
+/** 切换工作目录 */
+async function switchWorkspace(dir?: string): Promise<void> {
+  let targetDir = dir
+
+  if (!targetDir) {
+    targetDir = await api().selectDirectory()
+    if (!targetDir) return
+  }
+
+  workspaceDir.value = targetDir
+  localStorage.setItem(WORKSPACE_KEY, targetDir)
+  activeFileId.value = null
+  await loadFiles()
+}
+
+/** 打开文件（从磁盘重新加载） */
+async function loadFiles(): Promise<void> {
+  try {
+    const fileInfos = await api().listFiles(workspaceDir.value)
+    files.value = fileInfos.map((info) => ({
+      id: pathToId(info.path),
+      name: info.name,
+      path: info.path,
+      content: '',
+      createdAt: info.createdAt,
+      updatedAt: info.updatedAt,
+    }))
+  } catch {
+    files.value = []
+  }
+}
+
+// ========== 文件操作 ==========
+
+/** 选择文件 */
+async function selectFile(fileId: string): Promise<void> {
+  if (fileId === activeFileId.value) return
+
+  // 保存当前文件
+  await flushSave()
+
+  // 切换到新文件
+  activeFileId.value = fileId
+  localStorage.setItem(ACTIVE_FILE_KEY, fileId)
+
+  // 读取内容
+  const file = files.value.find((f) => f.id === fileId)
+  if (file && !file.content) {
+    file.content = await api().readFile(file.path)
+  }
+  dirty.value = false
+}
+
+/** 通过文件路径直接加载并打开文件（拖入 / 打开方式关联） */
+async function loadFileFromPath(filePath: string): Promise<void> {
+  try {
+    // 提取所在目录
+    const idx = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+    const dirPath = idx >= 0 ? filePath.substring(0, idx) : filePath
+    workspaceDir.value = dirPath
+    localStorage.setItem(WORKSPACE_KEY, dirPath)
+    await loadFiles()
+    const id = pathToId(filePath)
+    const existing = files.value.find(f => f.id === id)
+    if (existing) {
+      existing.content = await api().readFile(filePath)
+      activeFileId.value = id
+    } else {
+      const name = filePath.substring(idx + 1) || '未命名.md'
+      files.value.unshift({ id, name, path: filePath, content: await api().readFile(filePath), createdAt: Date.now(), updatedAt: Date.now() })
+      activeFileId.value = id
+    }
+    dirty.value = false
+  } catch (err) {
+    ElMessage.error('打开文件失败：' + String(err))
+  }
+}
+
+/** 创建新文件 */
+async function createFile(name?: string): Promise<void> {
+  const fileName = name || `未命名-${files.value.length + 1}`
+  try {
+    const filePath = await api().createFile(workspaceDir.value, fileName)
+    const stat = await api().statFile(filePath)
+
+    const newFile: MarkdownFile = {
+      id: pathToId(filePath),
+      name: fileName.endsWith('.md') ? fileName : fileName + '.md',
+      path: filePath,
+      content: `# ${fileName.replace('.md', '')}\n\n`,
+      createdAt: stat?.createdAt || Date.now(),
+      updatedAt: stat?.updatedAt || Date.now(),
+    }
+
+    files.value.unshift(newFile)
+    activeFileId.value = newFile.id
+    localStorage.setItem(ACTIVE_FILE_KEY, newFile.id)
+    dirty.value = false
+    ElMessage.success(`已创建 "${newFile.name}"`)
+  } catch {
+    ElMessage.error('创建文件失败')
+  }
+}
+
+/** 删除文件 */
+async function deleteFile(fileId: string): Promise<void> {
+  const file = files.value.find((f) => f.id === fileId)
+  if (!file) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除 "${file.name}" 吗？此操作不可恢复。`,
+      '删除确认',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+
+    const ok = await api().deleteFile(file.path)
+    if (ok) {
+      files.value = files.value.filter((f) => f.id !== fileId)
+      if (activeFileId.value === fileId) {
+        activeFileId.value = files.value.length > 0 ? files.value[0].id : null
+        if (activeFileId.value) {
+          const next = files.value.find((f) => f.id === activeFileId.value)
+          if (next) next.content = await api().readFile(next.path)
+        }
+      }
+      ElMessage.success(`已删除 "${file.name}"`)
+    }
+  } catch {
+    // 用户取消或失败
+  }
+}
+
+/** 重命名文件 */
+async function renameFile(fileId: string): Promise<void> {
+  const file = files.value.find((f) => f.id === fileId)
+  if (!file) return
+
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新文件名', '重命名', {
+      inputValue: file.name,
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPattern: /^.+\.md$/,
+      inputErrorMessage: '文件名必须以 .md 结尾',
+    })
+
+    if (value && value !== file.name) {
+      const newPath = await api().renameFile(file.path, value)
+      if (newPath) {
+        file.name = value
+        file.path = newPath
+        file.id = pathToId(newPath)
+        file.updatedAt = Date.now()
+        ElMessage.success(`已重命名为 "${value}"`)
+      }
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
+// ========== 保存 ==========
+
+/** 保存当前文件到磁盘 */
+async function saveFile(content?: string): Promise<void> {
+  const file = files.value.find((f) => f.id === activeFileId.value)
+  if (!file) return
+
+  const text = content ?? file.content
+  file.content = text
+  file.updatedAt = Date.now()
+
+  const ok = await api().saveFile(file.path, text)
+  if (ok) {
+    dirty.value = false
+    ElMessage.success('已保存')
+  } else {
+    ElMessage.error('保存失败')
+  }
+}
+
+/** 更新当前文件内容（内存中） */
+function updateContent(content: string): void {
+  const file = files.value.find((f) => f.id === activeFileId.value)
+  if (!file) return
+  file.content = content
+  dirty.value = true
+}
+
+/** 保存未保存的内容 */
+async function flushSave(): Promise<void> {
+  if (!dirty.value) return
+  const file = files.value.find((f) => f.id === activeFileId.value)
+  if (!file) return
+  await api().saveFile(file.path, file.content)
+  file.updatedAt = Date.now()
+  dirty.value = false
+}
+
+// ========== 导出 ==========
+
+export function useMarkdownFiles() {
+  return {
+    // 状态
+    files,
+    activeFileId,
+    activeFile,
+    workspaceDir,
+    loading,
+    searchQuery,
+    filteredFiles,
+    dirty,
+
+    // 初始化
+    init,
+
+    // 工作目录
+    switchWorkspace,
+
+    // 文件操作
+    selectFile,
+    loadFileFromPath,
+    createFile,
+    deleteFile,
+    renameFile,
+
+    // 滚动同步
+    editorScrollRatio,
+    setEditorScrollRatio,
+    previewScrollRatio,
+    setPreviewScrollRatio,
+    lockScroll,
+    isLocked,
+    // 大纲跳转
+    onHeadingJump,
+    jumpToHeading,
+    removeHeadingJump,
+
+    // 保存
+    saveFile,
+    updateContent,
+    flushSave,
+  }
+}

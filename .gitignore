@@ -1,0 +1,9 @@
+node_modules
+dist
+release
+src/auto-imports.d.ts
+src/components.d.ts
+*.exe
+*.blockmap
+_build_log.txt
+.DS_Store

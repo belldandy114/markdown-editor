@@ -1,0 +1,201 @@
+@use 'variables' as *;
+
+// ========== 主题变量混入 ==========
+
+// 浅色主题变量
+@mixin light-theme {
+  --bg: #{$light-bg};
+  --surface: #{$light-surface};
+  --primary: #{$light-primary};
+  --primary-container: #{$light-primary-container};
+  --on-primary: #{$light-on-primary};
+  --secondary: #{$light-secondary};
+  --text-primary: #{$light-text-primary};
+  --text-secondary: #{$light-text-secondary};
+  --text-hint: #{$light-text-hint};
+  --divider: #{$light-divider};
+  --border: #{$light-border};
+  --hover: #{$light-hover};
+  --active: #{$light-active};
+  --success: #{$light-success};
+  --warning: #{$light-warning};
+  --error: #{$light-error};
+  --code-bg: #{$light-code-bg};
+  --sidebar-bg: #{$light-sidebar-bg};
+  --preview-bg: #{$light-preview-bg};
+}
+
+// 深色主题变量
+@mixin dark-theme {
+  --bg: #{$dark-bg};
+  --surface: #{$dark-surface};
+  --primary: #{$dark-primary};
+  --primary-container: #{$dark-primary-container};
+  --on-primary: #{$dark-on-primary};
+  --secondary: #{$dark-secondary};
+  --text-primary: #{$dark-text-primary};
+  --text-secondary: #{$dark-text-secondary};
+  --text-hint: #{$dark-text-hint};
+  --divider: #{$dark-divider};
+  --border: #{$dark-border};
+  --hover: #{$dark-hover};
+  --active: #{$dark-active};
+  --success: #{$dark-success};
+  --warning: #{$dark-warning};
+  --error: #{$dark-error};
+  --code-bg: #{$dark-code-bg};
+  --sidebar-bg: #{$dark-sidebar-bg};
+  --preview-bg: #{$dark-preview-bg};
+}
+
+// 默认使用浅色主题
+:root {
+  @include light-theme;
+}
+
+// 深色主题
+html.dark {
+  @include dark-theme;
+}
+
+// ========== 全局样式 ==========
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: $font-family;
+  font-size: $font-size-base;
+  color: var(--text-primary);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color $transition-base, color $transition-base;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-hint);
+  border-radius: 3px;
+
+  &:hover {
+    background: var(--text-secondary);
+  }
+}
+
+// 选中文本颜色
+::selection {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+// ========== Element-Plus 深色主题覆写 ==========
+
+html.dark {
+  // 通用背景
+  --el-bg-color: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-fill-color: var(--surface);
+  --el-fill-color-light: var(--hover);
+  --el-fill-color-lighter: var(--active);
+  --el-border-color: var(--divider);
+  --el-border-color-light: var(--divider);
+  --el-border-color-lighter: var(--border);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-placeholder: var(--text-hint);
+  --el-text-color-disabled: var(--text-hint);
+
+  // Dialog
+  .el-dialog {
+    --el-dialog-bg-color: var(--surface);
+  }
+  .el-overlay { background-color: rgba(0,0,0,.6); }
+
+  // Input
+  .el-input__wrapper {
+    background-color: var(--surface);
+    box-shadow: 0 0 0 1px var(--border) inset;
+    &:hover { box-shadow: 0 0 0 1px var(--text-hint) inset; }
+  }
+  .el-input__inner { color: var(--text-primary); }
+  .el-input__prefix, .el-input__suffix { color: var(--text-hint); }
+
+  // Button
+  .el-button--primary {
+    --el-button-bg-color: var(--primary);
+    --el-button-border-color: var(--primary);
+    --el-button-text-color: #000;
+  }
+  .el-button--default {
+    --el-button-bg-color: var(--surface);
+    --el-button-border-color: var(--border);
+    --el-button-text-color: var(--text-primary);
+    --el-button-hover-bg-color: var(--hover);
+    --el-button-hover-border-color: var(--primary);
+    --el-button-hover-text-color: var(--primary);
+  }
+  .el-button--text {
+    --el-button-text-color: var(--text-secondary);
+    --el-button-hover-text-color: var(--primary);
+  }
+
+  // Dropdown
+  .el-dropdown-menu {
+    background-color: var(--surface);
+    border: 1px solid var(--divider);
+  }
+  .el-dropdown-menu__item {
+    color: var(--text-primary);
+    &:hover { background-color: var(--hover); }
+    &.is-disabled { color: var(--text-hint); }
+  }
+
+  // Select / dropdown popper
+  .el-popper {
+    border: 1px solid var(--divider);
+  }
+  .el-select-dropdown { background-color: var(--surface); }
+  .el-select-dropdown__item { color: var(--text-primary); }
+
+  // Message box
+  .el-message-box {
+    --el-messagebox-bg-color: var(--surface);
+    --el-messagebox-title-color: var(--text-primary);
+    --el-messagebox-content-color: var(--text-secondary);
+  }
+
+  // Message / notification
+  .el-message { min-width: auto; }
+
+  // Scrollbar
+  ::-webkit-scrollbar-thumb {
+    background: var(--text-hint);
+    border-radius: 3px;
+    &:hover { background: var(--text-secondary); }
+  }
+
+  // Tooltip
+  .el-tooltip__popper { font-size: 12px; }
+
+  // Empty
+  .el-empty__description p { color: var(--text-hint); }
+}
