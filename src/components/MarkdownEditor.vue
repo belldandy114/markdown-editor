@@ -5,6 +5,11 @@ import { useTheme } from '@/composables/useTheme'
 import { EditPen, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
+const emit = defineEmits<{
+  (e: 'export', format: 'html' | 'pdf' | 'png', overwrite?: boolean): void
+  (e: 'export-last', overwrite?: boolean): void
+}>()
+
 const { activeFile, saveFile, updateContent, activeFileId, dirty, switchWorkspace, workspaceDir, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, loadFileFromPath } = useMarkdownFiles()
 const { theme, toggleTheme } = useTheme()
 
@@ -405,7 +410,12 @@ function handleFileCmd(cmd:string){const t=getTa();if(!t)return
     case'new-window':window.electronAPI?.createWindow();break
     case'open':window.electronAPI?.openFileDialog().then(fp=>{if(fp)loadFileFromPath(fp)});break
     case'open-folder':window.electronAPI?.selectDirectory().then(d=>{if(d)switchWorkspace(d)});break
-    case'open-location':if(activeFile.value?.path)window.electronAPI?.showInFolder(activeFile.value.path)
+    case'open-location':if(activeFile.value?.path)window.electronAPI?.showInFolder(activeFile.value.path);break
+    case'export:html':emit('export','html');break
+    case'export:pdf':emit('export','pdf');break
+    case'export:png':emit('export','png');break
+    case'export:last':emit('export-last');break
+    case'export:last-ov':emit('export-last',true);break
   }
 }
 
@@ -439,6 +449,15 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
         <el-dropdown-item divided command="open">📄 打开文件</el-dropdown-item>
         <el-dropdown-item command="open-folder">📂 打开文件夹</el-dropdown-item>
         <el-dropdown-item command="open-location">📍 打开文件位置</el-dropdown-item>
+        <!-- 导出区（自定义 div，不经过 el-dropdown-item 事件系统） -->
+        <div class="ctxm__d"></div>
+        <div class="custom-export-header">📥 导出文档</div>
+        <div class="custom-export-item" @click.stop="handleFileCmd('export:html')"><span>🌐 导出 HTML</span><span class="export-kbd">Ctrl+Shift+H</span></div>
+        <div class="custom-export-item" @click.stop="handleFileCmd('export:pdf')"><span>📄 导出 PDF</span><span class="export-kbd">Ctrl+Shift+P</span></div>
+        <div class="custom-export-item" @click.stop="handleFileCmd('export:png')"><span>🖼️ 导出图像</span><span class="export-kbd">Ctrl+Shift+G</span></div>
+        <div class="custom-export-divider"></div>
+        <div class="custom-export-item" @click.stop="handleFileCmd('export:last')"><span>⚡ 上次设置导出</span><span class="export-kbd">Ctrl+Shift+E</span></div>
+        <div class="custom-export-item" @click.stop="handleFileCmd('export:last-ov')"><span>🔄 覆盖上次导出</span><span class="export-kbd">Ctrl+Shift+O</span></div>
       </el-dropdown-menu></template>
     </el-dropdown>
 
@@ -590,4 +609,15 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
 .ft-sc{display:flex;gap:14px}
 @media(max-width:1100px){.tb{padding:4px 6px}.tb-btn{font-size:11px;padding:3px 8px}.hdr-st{display:none}}
 @media(max-width:900px){.ft-sc{display:none}.lns{width:32px}.ta{padding:12px}}
+.custom-export-header {
+  padding: 5px 14px; font-size: 12px; color: var(--text-hint);
+  display: flex; align-items: center; gap: 4px; user-select: none;
+}
+.custom-export-item {
+  padding: 5px 14px; font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  &:hover { background: var(--primary-container); color: var(--primary); }
+}
+.export-kbd { font-size: 11px; color: var(--text-hint); margin-left: 16px; white-space: nowrap; }
+.custom-export-divider { height: 1px; background: var(--divider); margin: 3px 8px; }
 </style>

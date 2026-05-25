@@ -356,81 +356,88 @@ app.on('activate', () => {
   }
 })
 
-// ========== 导出 IPC ==========
+// ========== 导出 IPC（统一支持 filePath 参数，传则直接写入跳过对话框） ==========
+
+function getSavePath(win, type, title, filePath) {
+  if (filePath) return filePath
+  return new Promise((resolve) => {
+    dialog.showSaveDialog(win, {
+      title: `导出 ${type}`,
+      defaultPath: `${title}.${type}`,
+      filters: [{ name: type.toUpperCase(), extensions: [type] }],
+    }).then(r => resolve(r.canceled || !r.filePath ? null : r.filePath))
+  })
+}
 
 /** 导出 HTML */
-ipcMain.handle('export:html', async (_event, title, html) => {
+ipcMain.handle('export:html', async (_event, title, html, filePath) => {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
-  const result = await dialog.showSaveDialog(win, {
-    title: '导出 HTML',
-    defaultPath: `${title}.html`,
-    filters: [{ name: 'HTML 文件', extensions: ['html'] }],
-  })
-  if (result.canceled || !result.filePath) return null
-  try {
-    fs.writeFileSync(result.filePath, html, 'utf-8')
-    return result.filePath
-  } catch { return null }
+  const fp = filePath || await getSavePath(win, 'html', title)
+  if (!fp) return null
+  try { fs.writeFileSync(fp, html, 'utf-8'); return fp } catch { return null }
 })
+
+/** 渲染 HTML → PDF（内部工具） */
+async function _htmlToPdf(html) {
+  const tmpDir = app.getPath('temp')
+  const tmpFile = path.join(tmpDir, `mde-${Date.now()}.html`)
+  fs.writeFileSync(tmpFile, html, 'utf-8')
+  const bw = new BrowserWindow({
+    width: 900, height: 600, show: false,
+    webPreferences: { sandbox: false, contextIsolation: true, nodeIntegration: false, offscreen: true }
+  })
+  await bw.loadFile(tmpFile)
+  await new Promise(r => setTimeout(r, 800))
+  const buf = await bw.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true })
+  bw.close()
+  try { fs.unlinkSync(tmpFile) } catch {}
+  return buf
+}
 
 /** 导出 PDF */
-ipcMain.handle('export:pdf', async (_event, title, html) => {
+ipcMain.handle('export:pdf', async (_event, title, html, filePath) => {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
-  const result = await dialog.showSaveDialog(win, {
-    title: '导出 PDF',
-    defaultPath: `${title}.pdf`,
-    filters: [{ name: 'PDF 文件', extensions: ['pdf'] }],
-  })
-  if (result.canceled || !result.filePath) return null
+  const fp = filePath || await getSavePath(win, 'pdf', title)
+  if (!fp) return null
   try {
-    // 创建隐藏窗口渲染 HTML → PDF
-    const bw = new BrowserWindow({
-      width: 900, height: 600,
-      show: false,
-      webPreferences: { sandbox: true, contextIsolation: true }
-    })
-    const htmlContent = html
-    await bw.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`)
-    await new Promise(r => bw.webContents.once('did-finish-load', r))
-    const pdfBuf = await bw.webContents.printToPDF({
-      printBackground: true,
-      preferCSSPageSize: true,
-    })
-    bw.close()
-    fs.writeFileSync(result.filePath, pdfBuf)
-    return result.filePath
-  } catch (e) {
-    console.error('[export:pdf]', e)
-    return null
-  }
+    const buf = await _htmlToPdf(html)
+    fs.writeFileSync(fp, buf); return fp
+  } catch (e) { console.error('[export:pdf]', e && e.message); return null }
 })
+
+/** 渲染 HTML → 图片（内部工具） */
+async function _htmlToPng(html) {
+  const tmpDir = app.getPath('temp')
+  const tmpFile = path.join(tmpDir, `mdi-${Date.now()}.html`)
+  fs.writeFileSync(tmpFile, html, 'utf-8')
+  const bw = new BrowserWindow({
+    width: 900, height: 600, show: false,
+    webPreferences: { sandbox: false, contextIsolation: true, nodeIntegration: false }
+  })
+  await bw.loadFile(tmpFile)
+  await new Promise(r => setTimeout(r, 800))
+  let h = 600
+  try { const ch = await bw.webContents.executeJavaScript('document.documentElement.scrollHeight'); if (ch > 100) h = ch } catch {}
+  bw.setSize(900, Math.min(h + 40, 10000))
+  await new Promise(r => setTimeout(r, 500))
+  const img = await bw.webContents.capturePage()
+  bw.close()
+  try { fs.unlinkSync(tmpFile) } catch {}
+  return img.toPNG()
+}
 
 /** 导出图片 */
-ipcMain.handle('export:image', async (_event, title, dataUrl) => {
+ipcMain.handle('export:image', async (_event, title, html, filePath) => {
   const win = BrowserWindow.getFocusedWindow()
   if (!win) return null
-  const result = await dialog.showSaveDialog(win, {
-    title: '导出图片',
-    defaultPath: `${title}.png`,
-    filters: [{ name: 'PNG 图片', extensions: ['png'] }],
-  })
-  if (result.canceled || !result.filePath) return null
+  const fp = filePath || await getSavePath(win, 'png', title)
+  if (!fp) return null
   try {
-    const commaIdx = dataUrl.indexOf(',')
-    const raw = commaIdx >= 0 ? dataUrl.substring(commaIdx + 1) : dataUrl
-    fs.writeFileSync(result.filePath, Buffer.from(raw, 'base64'))
-    return result.filePath
-  } catch { return null }
-})
-
-/** 直接写入文件（用于覆盖导出） */
-ipcMain.handle('file:write', async (_event, filePath, content) => {
-  try {
-    fs.writeFileSync(filePath, content, 'utf-8')
-    return true
-  } catch { return false }
+    const buf = await _htmlToPng(html)
+    fs.writeFileSync(fp, buf); return fp
+  } catch (e) { console.error('[export:image]', e && e.message); return null }
 })
 
 /** 文件关联打开（macOS） */

@@ -54,10 +54,9 @@ export interface ElectronAPI {
   cancelClose: () => void
   onFileDropped?: (fn: (filePath: string) => void) => void
   // 导出功能
-  exportHtml: (title: string, html: string) => Promise<string | null>
-  exportPdf: (title: string, html: string) => Promise<string | null>
-  exportImage: (title: string, dataUrl: string) => Promise<string | null>
-  writeFile: (filePath: string, content: string) => Promise<boolean>
+  exportHtml: (title: string, html: string, filePath?: string) => Promise<string | null>
+  exportPdf: (title: string, html: string, filePath?: string) => Promise<string | null>
+  exportImage: (title: string, html: string, filePath?: string) => Promise<string | null>
 }
 
 declare global {

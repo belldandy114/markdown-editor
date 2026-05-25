@@ -149,67 +149,63 @@ renderer.table = function ({ header, rows }) { let h='<div class="table-wrapper"
 renderer.checkbox = function (checked) { return checked?'<span class="task-checked">☑</span> ':'<span class="task-unchecked">☐</span> ' }
 marked.use({ renderer })
 
+// Mermaid 预渲染缓存：避免闪烁（在设置 renderedHtml 前就把 SVG 准备好）
+let _mermaidId = 0
+const _mermaidCache = new Map<string, string>()
+
 async function compile(c: string) {
   if (!c) {
     renderedHtml.value = '<div class="preview-empty"><div class="preview-empty__icon">📝</div><p>点击编辑</p></div>'
     return
   }
   try {
-    renderedHtml.value = marked.parse(c) as string
-    // 渲染 Mermaid 图表
-    await renderMermaidDiagrams()
+    let html = marked.parse(c) as string
+    // 预渲染 Mermaid：提取源码 → 调用 mermaid.render → 直接替换 HTML 中的 code-block
+    html = await replaceMermaidInHtml(html, c)
+    renderedHtml.value = html
   } catch {
     renderedHtml.value = '<p class="preview-error">渲染错误</p>'
   }
 }
 
-/** 查找并渲染所有 Mermaid 代码块 */
-let _mermaidId = 0
-async function renderMermaidDiagrams(): Promise<void> {
-  if (!previewRef.value) return
-  const mermaidBlocks = previewRef.value.querySelectorAll<HTMLElement>('.code-block .code-lang')
-  const pending: Promise<void>[] = []
-  for (const langEl of mermaidBlocks) {
-    if (langEl.textContent?.trim().toLowerCase() !== 'mermaid') continue
-    const codeBlock = langEl.closest('.code-block') as HTMLElement | null
-    if (!codeBlock || codeBlock.dataset.mermaidRendered) continue
-    codeBlock.dataset.mermaidRendered = 'true'
-    const codeEl = codeBlock.querySelector('pre code')
-    if (!codeEl) continue
-    const rawCode = codeEl.textContent || ''
-    if (!rawCode.trim()) continue
-    // 解码 HTML 实体
-    const decoded = rawCode.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    const id = `mermaid-${++_mermaidId}`
-    pending.push(
-      mermaid.render(id, decoded).then(({ svg }) => {
-        const wrapper = document.createElement('div')
-        wrapper.className = 'mermaid-wrapper'
-        wrapper.innerHTML = svg
-        // 保留语言标签，替换 pre
-        const header = codeBlock.querySelector('.code-block__header')
-        const pre = codeBlock.querySelector('pre')
-        if (pre && header) {
-          pre.replaceWith(wrapper)
-        } else {
-          codeBlock.innerHTML = ''
-          codeBlock.appendChild(header || document.createComment(''))
-          codeBlock.appendChild(wrapper)
-        }
-      }).catch((e) => {
-        console.warn('[Mermaid] 渲染失败:', e)
-        codeBlock.classList.add('mermaid-error')
-        const pre = codeBlock.querySelector('pre')
-        if (pre) {
-          const errDiv = document.createElement('div')
-          errDiv.className = 'mermaid-error-msg'
-          errDiv.textContent = '流程图渲染失败: ' + (e?.message || String(e))
-          pre.insertAdjacentElement('afterend', errDiv)
-        }
-      })
-    )
+/** 在 HTML 字符串中用预渲染的 SVG 替换 mermaid 代码块 */
+async function replaceMermaidInHtml(html: string, source: string): Promise<string> {
+  // 匹配 mermaid 代码块：```mermaid ... ```
+  const mermaidRegex = /```mermaid\s*\n([\s\S]*?)```/gi
+  const replacements: { original: string; svg: string }[] = []
+
+  const matches = source.matchAll(mermaidRegex)
+  for (const match of matches) {
+    const code = match[1].trim()
+    if (!code) continue
+    const cacheKey = code
+    let svg = _mermaidCache.get(cacheKey)
+    if (!svg) {
+      try {
+        const result = await mermaid.render(`mermaid-${++_mermaidId}`, code)
+        svg = result.svg
+        _mermaidCache.set(cacheKey, svg)
+      } catch (e: any) {
+        svg = `<div class="mermaid-error-msg">流程图渲染失败: ${e?.message || String(e)}</div>`
+      }
+    }
+    replacements.push({ original: match[0], svg })
   }
-  await Promise.all(pending)
+
+  // 在 HTML 中替换对应的 mermaid code-block
+  // marked 会将 ```mermaid 渲染成 <div class="code-block"><div class="code-block__header"><span class="code-lang">mermaid</span></div><pre><code class="language-mermaid">...</code></pre></div>
+  for (const r of replacements) {
+    const escaped = r.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const wrapper = `<div class="code-block mermaid-block"><div class="code-block__header"><span class="code-lang">mermaid</span></div><div class="mermaid-wrapper">${r.svg}</div></div>`
+    // 查找 marked 生成的 mermaid code-block 并替换
+    const codeBlockRegex = new RegExp(
+      `<div class="code-block">\\s*<div class="code-block__header">\\s*<span class="code-lang">mermaid</span>\\s*</div>\\s*<pre><code[^>]*>[\\s\\S]*?</code></pre>\\s*</div>`,
+      'gi'
+    )
+    html = html.replace(codeBlockRegex, wrapper)
+  }
+
+  return html
 }
 function debouncedCompile(c:string){
   if(debounceTimer.value)clearTimeout(debounceTimer.value)
@@ -518,110 +514,18 @@ onHeadingJump((anchorId) => {
   })
 })
 
-// ========== 导出功能 ==========
-
-import { toPng } from 'html-to-image'
-
-const EXPORT_LAST_FORMAT_KEY = 'md-export-last-format'
-const EXPORT_LAST_PATH_KEY = 'md-export-last-path'
-
-const showExportDialog = ref(false)
-const exportFormat = ref<'html' | 'pdf' | 'png'>('html')
-const exportOverwriteLast = ref(false)
-
-function openExportDialog() {
-  // 恢复上次设置
-  const lastFormat = localStorage.getItem(EXPORT_LAST_FORMAT_KEY)
-  if (lastFormat && (lastFormat === 'html' || lastFormat === 'pdf' || lastFormat === 'png')) {
-    exportFormat.value = lastFormat
-  }
-  const lastPath = localStorage.getItem(EXPORT_LAST_PATH_KEY)
-  exportOverwriteLast.value = !!lastPath
-  showExportDialog.value = true
-}
-
-function closeExportDialog() {
-  showExportDialog.value = false
-}
-
-async function doExport() {
-  const title = activeFile.value?.name?.replace('.md', '') || '文档'
-  const html = renderedHtml.value
-  closeExportDialog()
-
-  // 保存设置
-  localStorage.setItem(EXPORT_LAST_FORMAT_KEY, exportFormat.value)
-
-  const lastPath = localStorage.getItem(EXPORT_LAST_PATH_KEY)
-
-  if (exportOverwriteLast.value && lastPath) {
-    // 覆盖上次导出的文件
-    if (exportFormat.value === 'html') {
-      const ok = await window.electronAPI?.writeFile?.(lastPath, wrapHtml(title, html))
-      if (ok) { ElMessage.success('已覆盖导出: ' + lastPath); return }
-    }
-    ElMessage.warning('覆盖失败，将另存为新文件')
-  }
-
-  try {
-    if (exportFormat.value === 'html') {
-      const path = await window.electronAPI?.exportHtml?.(title, html)
-      if (path) {
-        localStorage.setItem(EXPORT_LAST_PATH_KEY, path)
-        ElMessage.success('HTML 已导出')
-      }
-    } else if (exportFormat.value === 'pdf') {
-      const path = await window.electronAPI?.exportPdf?.(title, html)
-      if (path) {
-        localStorage.setItem(EXPORT_LAST_PATH_KEY, path)
-        ElMessage.success('PDF 已导出')
-      }
-    } else if (exportFormat.value === 'png') {
-      if (!previewRef.value) return
-      ElMessage.info('正在生成图片…')
-      const dataUrl = await toPng(previewRef.value, { backgroundColor: '#ffffff' })
-      const path = await window.electronAPI?.exportImage?.(title, dataUrl)
-      if (path) {
-        localStorage.setItem(EXPORT_LAST_PATH_KEY, path)
-        ElMessage.success('图片已导出')
-      }
-    }
-  } catch (e: any) {
-    ElMessage.error('导出失败: ' + (e?.message || String(e)))
-  }
-}
-
-function wrapHtml(title: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${title}</title>
-<style>
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.8; color: #333; }
-h1, h2, h3 { color: #1a1a1a; }
-pre { background: #1e1e2e; color: #e0e0e0; padding: 1rem; border-radius: 8px; overflow-x: auto; }
-code { font-family: "Fira Code", monospace; font-size: 0.9em; }
-blockquote { border-left: 4px solid #409eff; padding: 0.5rem 1rem; background: #f0f7ff; margin: 1rem 0; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
-th { background: #f5f5f5; }
-img { max-width: 100%; }
-.mermaid-wrapper { text-align: center; margin: 1rem 0; }
-.mermaid-wrapper svg { max-width: 100%; }
-</style>
-</head>
-<body>${body}</body>
-</html>`
-}
+// 暴露给父组件用于导出
+defineExpose({
+  getRenderedHtml: () => renderedHtml.value,
+  getPreviewEl: () => previewRef.value,
+  getActiveFileName: () => activeFile.value?.name || '',
+})
 </script>
 
 <template>
   <div class="preview-panel">
     <div class="preview-panel__tabs">
       <div class="preview-panel__hint">预览</div>
-      <button v-if="!isEditing && renderedHtml" class="preview-panel__export-btn" @click.stop="openExportDialog" title="导出文档">📥 导出</button>
     </div>
 
     <!-- 只读预览 -->
@@ -648,45 +552,6 @@ img { max-width: 100%; }
       </div>
     </Teleport>
     <div v-if="imgCtxVisible" class="preview-img-ctxm-mask" @mousedown="closeImgCtx" @contextmenu.prevent="closeImgCtx" />
-
-    <!-- 导出对话框 -->
-    <Teleport to="body">
-      <div v-if="showExportDialog" class="export-dialog-mask" @mousedown.self="closeExportDialog">
-        <div class="export-dialog">
-          <h3 class="export-dialog__title">导出文档</h3>
-
-          <div class="export-dialog__section">
-            <label class="export-dialog__label">导出格式</label>
-            <div class="export-dialog__formats">
-              <label class="export-fmt" :class="{ 'export-fmt--active': exportFormat === 'html' }">
-                <input v-model="exportFormat" type="radio" value="html" />
-                <span>🌐 HTML</span>
-              </label>
-              <label class="export-fmt" :class="{ 'export-fmt--active': exportFormat === 'pdf' }">
-                <input v-model="exportFormat" type="radio" value="pdf" />
-                <span>📄 PDF</span>
-              </label>
-              <label class="export-fmt" :class="{ 'export-fmt--active': exportFormat === 'png' }">
-                <input v-model="exportFormat" type="radio" value="png" />
-                <span>🖼️ 图像 (PNG)</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="export-dialog__section">
-            <label class="export-dialog__check">
-              <input v-model="exportOverwriteLast" type="checkbox" />
-              <span>覆盖上一次导出的文件</span>
-            </label>
-          </div>
-
-          <div class="export-dialog__actions">
-            <button class="export-dialog__btn export-dialog__btn--cancel" @click="closeExportDialog">取消</button>
-            <button class="export-dialog__btn export-dialog__btn--confirm" @click="doExport">导出</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
@@ -757,59 +622,6 @@ img { max-width: 100%; }
   z-index: 10000;
 }
 
-// ========== 导出按钮 ==========
-.preview-panel__export-btn {
-  margin-left: auto;
-  padding: 4px 12px;
-  font-size: 12px;
-  border: 1px solid var(--divider);
-  border-radius: 4px;
-  background: var(--sidebar-bg);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all .15s;
-  &:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
-}
-
-// ========== 导出对话框 ==========
-.export-dialog-mask {
-  position: fixed; inset: 0; z-index: 10002;
-  background: rgba(0,0,0,.35);
-  display: flex; align-items: center; justify-content: center;
-}
-.export-dialog {
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 8px 40px rgba(0,0,0,.15);
-  padding: 24px;
-  width: 420px;
-  max-width: 90vw;
-  &__title { margin: 0 0 20px; font-size: 18px; font-weight: 600; color: var(--text-primary); }
-  &__section { margin-bottom: 16px; }
-  &__label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
-  &__formats { display: flex; gap: 8px; }
-  &__check {
-    display: flex; align-items: center; gap: 8px; font-size: 13px;
-    color: var(--text-secondary); cursor: pointer;
-    input[type="checkbox"] { accent-color: var(--primary); }
-  }
-  &__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-  &__btn {
-    padding: 8px 20px; border-radius: 6px; font-size: 14px; cursor: pointer; border: none;
-    &--cancel { background: var(--hover); color: var(--text-secondary); }
-    &--confirm { background: var(--primary); color: #fff; }
-    &:hover { opacity: .85; }
-  }
-}
-.export-fmt {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 12px 8px; border: 2px solid var(--divider); border-radius: 8px;
-  cursor: pointer; font-size: 13px; color: var(--text-secondary);
-  transition: all .15s;
-  input { display: none; }
-  &:hover { border-color: var(--primary-light); }
-  &--active { border-color: var(--primary); color: var(--primary); background: var(--primary-container); }
-}
 </style>
 
 <style lang="scss">
