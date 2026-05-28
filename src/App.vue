@@ -121,6 +121,9 @@ onMounted(async () => {
   await init()
   window.addEventListener('keydown', handleGlobalKeydown)
   window.electronAPI?.onOpenFile((filePath) => { loadFileFromPath(filePath) })
+  // 轮询获取"打开方式"传入的待打开文件（解决推送式 IPC 的竞态条件）
+  const pendingFile = await window.electronAPI?.pollOpenFile?.()
+  if (pendingFile) loadFileFromPath(pendingFile)
   window.electronAPI?.onFileDropped?.((filePath) => { loadFileFromPath(filePath) })
   window.electronAPI?.onConfirmClose(async () => {
     try {

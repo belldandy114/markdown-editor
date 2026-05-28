@@ -53,6 +53,8 @@ export interface ElectronAPI {
   confirmClose: () => void
   cancelClose: () => void
   onFileDropped?: (fn: (filePath: string) => void) => void
+  /** 轮询获取"打开方式"传入的待打开文件 */
+  pollOpenFile?: () => Promise<string | null>
   // 导出功能
   exportHtml: (title: string, html: string, filePath?: string) => Promise<string | null>
   exportPdf: (title: string, html: string, filePath?: string) => Promise<string | null>

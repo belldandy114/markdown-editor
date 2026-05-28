@@ -25,6 +25,14 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown File",
+        "description": "Markdown 文件",
+        "icon": "icon.ico"
+      }
+    ],
     "mac": {
       "target": [
         {

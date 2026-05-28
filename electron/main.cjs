@@ -15,6 +15,9 @@ function getDefaultWorkspace() {
 
 // ========== IPC 处理 ==========
 
+/** 待打开文件路径（"打开方式"传入，供渲染进程轮询，解决竞态条件） */
+let pendingFilePath = null
+
 let isDirty = false
 ipcMain.on('app:dirty', (_event, d) => { isDirty = d })
 
@@ -257,6 +260,9 @@ ipcMain.handle('file:read-as-base64', async (_event, filePath) => {
   } catch { return null }
 })
 
+/** 渲染进程轮询获取待打开文件路径 */
+ipcMain.handle('file:poll-open-file', () => { const fp = pendingFilePath; pendingFilePath = null; return fp })
+
 /** 读取文件统计信息 */
 ipcMain.handle('file:stat', (_event, filePath) => {
   try {
@@ -320,15 +326,12 @@ ipcMain.handle('window:create', () => {
 
 app.whenReady().then(() => {
   createWindow()
-  // Windows：检查命令行参数中的 .md 文件
+  // Windows：检查命令行参数中的 .md 文件（"打开方式"传入）
   const fileArg = process.argv.find(a => a.endsWith('.md') && fs.existsSync(a))
   if (fileArg) {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (win) setTimeout(() => win.webContents.send('file:opened', fileArg), 500)
+    pendingFilePath = fileArg
   }
 })
-
-// Windows：单实例锁 + 第二实例文件打开
 const gotLock = app.requestSingleInstanceLock?.()
 if (!gotLock) {
   app.quit()
@@ -339,7 +342,11 @@ if (!gotLock) {
       if (win.isMinimized()) win.restore()
       win.focus()
       const fileArg = argv.find(a => a.endsWith('.md') && fs.existsSync(a))
-      if (fileArg) win.webContents.send('file:opened', fileArg)
+      if (fileArg) {
+        pendingFilePath = fileArg
+        // 同时推送快速路径（渲染进程已就绪时立即生效）
+        win.webContents.send('file:opened', fileArg)
+      }
     }
   })
 }
