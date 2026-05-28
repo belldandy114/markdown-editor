@@ -29,8 +29,7 @@
       {
         "ext": "md",
         "name": "Markdown File",
-        "description": "Markdown 文件",
-        "icon": "icon.ico"
+        "description": "Markdown 文件"
       }
     ],
     "mac": {
@@ -50,7 +49,6 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
