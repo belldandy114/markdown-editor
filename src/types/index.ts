@@ -22,6 +22,16 @@ export interface FileInfo {
   updatedAt: number
 }
 
+/** 文件树节点（递归） */
+export interface FileTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: FileTreeNode[]
+  createdAt?: number
+  updatedAt?: number
+}
+
 /** 主题模式 */
 export type ThemeMode = 'light' | 'dark'
 
@@ -31,11 +41,15 @@ export interface ElectronAPI {
   selectDirectory: () => Promise<string | null>
   getDefaultWorkspace: () => Promise<string>
   listFiles: (dirPath: string) => Promise<FileInfo[]>
+  listTree: (dirPath: string) => Promise<FileTreeNode[]>
   readFile: (filePath: string) => Promise<string>
   saveFile: (filePath: string, content: string) => Promise<boolean>
   createFile: (dirPath: string, name: string) => Promise<string>
+  copyFile: (sourcePath: string) => Promise<string | null>
   deleteFile: (filePath: string) => Promise<boolean>
   renameFile: (filePath: string, newName: string) => Promise<string | null>
+  createDir: (parentPath: string, name: string) => Promise<string | null>
+  deleteDir: (dirPath: string) => Promise<boolean>
   statFile: (filePath: string) => Promise<{ size: number; createdAt: number; updatedAt: number } | null>
   saveImage: (dirPath: string, fileName: string, base64Data: string) => Promise<string | null>
   saveImageAs: (base64Data: string) => Promise<string | null>

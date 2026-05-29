@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import type { MarkdownFile } from '@/types'
+import type { MarkdownFile, FileTreeNode } from '@/types'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const WORKSPACE_KEY = 'markdown-editor-workspace'
@@ -14,6 +14,9 @@ const loading = ref(true)
 const searchQuery = ref('')
 const dirty = ref(false)
 const editorScrollRatio = ref(0)
+const treeData = ref<FileTreeNode[]>([])
+const expandedPaths = ref<Set<string>>(new Set())
+const treeLoading = ref(false)
 const previewScrollRatio = ref(0)
 let _scrollLock = false
 function lockScroll() { _scrollLock = true; setTimeout(() => { _scrollLock = false }, 30) }
@@ -76,8 +79,10 @@ async function init(): Promise<void> {
 
     // 2. 加载文件列表（不含内容）
     await loadFiles()
+    // 3. 加载目录树
+    await loadTree()
 
-    // 3. 恢复上次打开的文件
+    // 4. 恢复上次打开的文件
     const savedId = localStorage.getItem(ACTIVE_FILE_KEY)
     if (savedId && files.value.some((f) => f.id === savedId)) {
       activeFileId.value = savedId
@@ -111,7 +116,52 @@ async function switchWorkspace(dir?: string): Promise<void> {
   workspaceDir.value = targetDir
   localStorage.setItem(WORKSPACE_KEY, targetDir)
   activeFileId.value = null
+  expandedPaths.value = new Set()
+  await loadTree()
   await loadFiles()
+}
+
+/** 加载目录树 */
+async function loadTree(): Promise<void> {
+  treeLoading.value = true
+  try {
+    treeData.value = await api().listTree(workspaceDir.value)
+  } catch { treeData.value = [] }
+  finally { treeLoading.value = false }
+}
+
+/** 切换文件夹展开/收起 */
+function toggleExpand(path: string): void {
+  const s = new Set(expandedPaths.value)
+  if (s.has(path)) s.delete(path); else s.add(path)
+  expandedPaths.value = s
+}
+
+/** 通过文件路径打开文件（树节点点击） */
+async function openFileByPath(filePath: string): Promise<void> {
+  const id = pathToId(filePath)
+  let file = files.value.find(f => f.id === id)
+  if (!file) {
+    const name = filePath.replace(/\\/g, '/').split('/').pop() || '未命名.md'
+    const stat = await api().statFile(filePath)
+    file = { id, name, path: filePath, content: '', createdAt: stat?.createdAt || Date.now(), updatedAt: stat?.updatedAt || Date.now() }
+    files.value.unshift(file)
+  }
+  if (!file.content) file.content = await api().readFile(filePath)
+  activeFileId.value = id
+  dirty.value = false
+}
+
+/** 复制文件 */
+async function copyFileItem(filePath: string): Promise<void> {
+  const newPath = await api().copyFile(filePath)
+  if (newPath) {
+    await loadTree()
+    await loadFiles()
+    ElMessage.success(`已复制到 ${newPath.split(/[/\\]/).pop()}`)
+  } else {
+    ElMessage.error('复制失败')
+  }
 }
 
 /** 打开文件（从磁盘重新加载） */
@@ -261,6 +311,43 @@ async function renameFile(fileId: string): Promise<void> {
   }
 }
 
+/** 创建文件夹 */
+async function createDir(parentPath: string): Promise<string | null> {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入文件夹名称', '新建文件夹', {
+      confirmButtonText: '创建', cancelButtonText: '取消',
+      inputPattern: /^[^\\/:*?"<>|]+$/,
+      inputErrorMessage: '名称包含非法字符',
+    })
+    if (!value) return null
+    const dirPath = await api().createDir(parentPath, value)
+    if (dirPath) {
+      await loadTree()
+      toggleExpand(parentPath)
+      ElMessage.success(`已创建文件夹 "${value}"`)
+      return dirPath
+    }
+    ElMessage.error('创建失败，可能已存在同名文件夹')
+    return null
+  } catch { return null }
+}
+
+/** 删除目录（仅空目录） */
+async function deleteDirFromTree(dirPath: string): Promise<boolean> {
+  try {
+    await ElMessageBox.confirm('确定要删除此文件夹吗？只能删除空文件夹。', '删除确认',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' })
+    const ok = await api().deleteDir(dirPath)
+    if (ok) {
+      await loadTree()
+      ElMessage.success('文件夹已删除')
+      return true
+    }
+    ElMessage.error('删除失败，文件夹不为空')
+    return false
+  } catch { return false }
+}
+
 // ========== 保存 ==========
 
 /** 保存当前文件到磁盘 */
@@ -305,9 +392,12 @@ export function useMarkdownFiles() {
   return {
     // 状态
     files,
+    treeData,
     activeFileId,
     activeFile,
     workspaceDir,
+    treeLoading,
+    expandedPaths,
     loading,
     searchQuery,
     filteredFiles,
@@ -318,11 +408,17 @@ export function useMarkdownFiles() {
 
     // 工作目录
     switchWorkspace,
+    loadTree,
+    toggleExpand,
 
     // 文件操作
     selectFile,
+    openFileByPath,
     loadFileFromPath,
     createFile,
+    copyFileItem,
+    createDir,
+    deleteDirFromTree,
     deleteFile,
     renameFile,
 

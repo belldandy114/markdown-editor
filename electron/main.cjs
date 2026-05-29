@@ -88,6 +88,45 @@ ipcMain.handle('file:list', (_event, dirPath) => {
   }
 })
 
+/** 递归列出目录树（文件和文件夹） */
+function _scanTree(dirPath) {
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+  const result = []
+  for (const e of entries) {
+    const fullPath = path.join(dirPath, e.name)
+    if (e.isDirectory()) {
+      // 跳过 .assets 等隐藏目录
+      if (e.name.startsWith('.')) continue
+      result.push({
+        name: e.name,
+        path: fullPath,
+        type: 'directory',
+        children: _scanTree(fullPath),
+      })
+    } else if (e.isFile() && e.name.endsWith('.md')) {
+      const stat = fs.statSync(fullPath)
+      result.push({
+        name: e.name,
+        path: fullPath,
+        type: 'file',
+        createdAt: stat.birthtimeMs,
+        updatedAt: stat.mtimeMs,
+      })
+    }
+  }
+  result.sort((a, b) => { if (a.type !== b.type) return a.type === 'directory' ? -1 : 1; return a.name.localeCompare(b.name) })
+  return result
+}
+ipcMain.handle('file:list-tree', (_event, dirPath) => {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true })
+      return []
+    }
+    return _scanTree(dirPath)
+  } catch { return [] }
+})
+
 /** 读取文件内容 */
 ipcMain.handle('file:read', (_event, filePath) => {
   try {
@@ -148,6 +187,44 @@ ipcMain.handle('file:rename', (_event, filePath, newName) => {
   } catch {
     return null
   }
+})
+
+/** 复制（复制）文件到同目录，自动添加"副本"后缀 */
+ipcMain.handle('file:copy', (_event, sourcePath) => {
+  try {
+    const dir = path.dirname(sourcePath)
+    const ext = path.extname(sourcePath)
+    const base = path.basename(sourcePath, ext)
+    let newPath = path.join(dir, `${base} - 副本${ext}`)
+    let counter = 1
+    while (fs.existsSync(newPath)) {
+      counter++
+      newPath = path.join(dir, `${base} - 副本 (${counter})${ext}`)
+    }
+    fs.copyFileSync(sourcePath, newPath)
+    return newPath
+  } catch { return null }
+})
+
+/** 创建文件夹 */
+ipcMain.handle('dir:create', (_event, parentPath, name) => {
+  try {
+    const dirPath = path.join(parentPath, name)
+    if (fs.existsSync(dirPath)) return null
+    fs.mkdirSync(dirPath, { recursive: true })
+    return dirPath
+  } catch { return null }
+})
+
+/** 删除文件夹（非递归，仅删除空目录） */
+ipcMain.handle('dir:delete', (_event, dirPath) => {
+  try {
+    // 检查是否为空
+    const entries = fs.readdirSync(dirPath)
+    if (entries.length > 0) return false
+    fs.rmdirSync(dirPath)
+    return true
+  } catch { return false }
 })
 
 /** 另存为图片（通过 save 对话框选择位置） */
