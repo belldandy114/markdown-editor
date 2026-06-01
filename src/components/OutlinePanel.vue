@@ -4,7 +4,7 @@ import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
 
 interface HItem { level: number; text: string; anchorId: string }
 
-const { activeFile, jumpToHeading } = useMarkdownFiles()
+const { activeFile } = useMarkdownFiles()
 
 // 使用一个内部 ref 显式追踪内容变化，确保 computed 在内容首次载入时也能触发
 const contentSnapshot = ref('')
@@ -35,7 +35,6 @@ function scrollTo(id: string): void {
     const el = previewPanel.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      // 清除上一次的高亮定时器，避免多次点击导致高亮提前消失
       if (_highlightTimer) clearTimeout(_highlightTimer)
       el.classList.add('outline-highlight')
       _highlightTimer = setTimeout(() => {
@@ -44,9 +43,21 @@ function scrollTo(id: string): void {
       }, 2000)
     }
   }
-  // 编辑器跳转：通过 composable 的 jumpToHeading 回调系统协调
-  // 由 MarkdownEditor 内部的 onHeadingJump 回调处理滚动（不抢焦点）
-  jumpToHeading(id)
+  // 编辑器滚动：直接操作 DOM 滚动 textarea，不调用 focus（抢焦点会导致顶部导航消失）
+  const ta = document.querySelector('.editor-panel .ta') as HTMLTextAreaElement | null
+  if (ta && activeFile.value?.content) {
+    const lines = activeFile.value.content.split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+(.+)$/)
+      if (m) {
+        const h = m[2].toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '')
+        if (h === id) {
+          ta.scrollTop = Math.max(0, i * 22 - 100)
+          break
+        }
+      }
+    }
+  }
 }
 </script>
 
