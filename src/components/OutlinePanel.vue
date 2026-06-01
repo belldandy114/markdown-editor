@@ -28,19 +28,37 @@ const headings = computed<HItem[]>(() => {
     }))
 })
 
+/** 根据 heading anchorId 查找该标题在 DOM 中的位置偏移 */
+function findHeadingOffset(container: Element, id: string): number {
+  const el = container.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
+  if (!el) return -1
+  // 计算该元素相对于可滚动容器的 offsetTop
+  let offset = el.offsetTop
+  let parent = el.offsetParent
+  while (parent && parent !== container) {
+    offset += (parent as HTMLElement).offsetTop || 0
+    parent = (parent as HTMLElement).offsetParent
+  }
+  return offset
+}
+
 function scrollTo(id: string): void {
-  // 预览高亮：滚动 + 临时高亮样式
-  const previewPanel = document.querySelector('.preview-panel__content.markdown-body')
+  // 预览滚动 + 高亮（用 scrollTop 避免 scrollIntoView 对页面布局的副作用）
+  const previewPanel = document.querySelector('.preview-panel__content.markdown-body') as HTMLElement | null
   if (previewPanel) {
-    const el = previewPanel.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      if (_highlightTimer) clearTimeout(_highlightTimer)
-      el.classList.add('outline-highlight')
-      _highlightTimer = setTimeout(() => {
-        el.classList.remove('outline-highlight')
-        _highlightTimer = null
-      }, 2000)
+    const offset = findHeadingOffset(previewPanel, id)
+    if (offset >= 0) {
+      previewPanel.scrollTop = Math.max(0, offset - 60)
+      // 高亮
+      const el = previewPanel.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
+      if (el) {
+        if (_highlightTimer) clearTimeout(_highlightTimer)
+        el.classList.add('outline-highlight')
+        _highlightTimer = setTimeout(() => {
+          el.classList.remove('outline-highlight')
+          _highlightTimer = null
+        }, 2000)
+      }
     }
   }
   // 编辑器滚动：直接操作 DOM 滚动 textarea，不调用 focus（抢焦点会导致顶部导航消失）
