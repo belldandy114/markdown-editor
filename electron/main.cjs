@@ -90,13 +90,15 @@ ipcMain.handle('file:list', (_event, dirPath) => {
 
 /** 递归列出目录树（文件和文件夹） */
 function _scanTree(dirPath) {
+  // 跳过不参与项目的目录（避免扫描 node_modules 等巨量文件导致崩溃）
+  const SKIP_DIRS = new Set(['node_modules', '.git', '.svn', 'dist', 'release', '.vscode', 'out', 'build'])
   const entries = fs.readdirSync(dirPath, { withFileTypes: true })
   const result = []
   for (const e of entries) {
     const fullPath = path.join(dirPath, e.name)
     if (e.isDirectory()) {
       // 跳过 .assets 等隐藏目录
-      if (e.name.startsWith('.')) continue
+      if (e.name.startsWith('.') || SKIP_DIRS.has(e.name)) continue
       result.push({
         name: e.name,
         path: fullPath,

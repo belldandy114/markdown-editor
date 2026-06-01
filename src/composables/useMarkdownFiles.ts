@@ -45,9 +45,19 @@ function pathToId(filePath: string): string {
   return Math.abs(hash).toString(36)
 }
 
-/** 获取窗口 API */
+/** 获取窗口 API，返回 null 表示 Electron API 不可用 */
 function api() {
-  return window.electronAPI!
+  const ea = (window as any).electronAPI
+  if (!ea) {
+    console.warn('[useMarkdownFiles] electronAPI 不可用，请在 Electron 环境中运行')
+    return null
+  }
+  return ea
+}
+
+/** 检查 Electron API 是否可用 */
+function hasApi(): boolean {
+  return !!(window as any).electronAPI
 }
 
 // ========== 计算属性 ==========
@@ -67,14 +77,23 @@ const filteredFiles = computed(() => {
 async function init(): Promise<void> {
   loading.value = true
   try {
+    const ea = api()
+    if (!ea) {
+      // Electron API 不可用（浏览器开发模式），显示提示
+      workspaceDir.value = '（未连接 Electron）'
+      console.warn('[useMarkdownFiles] Electron API 不可用，请在 Electron 环境中运行')
+      loading.value = false
+      return
+    }
+
     // 1. 读取工作目录
     const saved = localStorage.getItem(WORKSPACE_KEY)
     if (saved) {
       workspaceDir.value = saved
     } else {
-      const defaultDir = await api().getDefaultWorkspace()
-      workspaceDir.value = defaultDir
-      localStorage.setItem(WORKSPACE_KEY, defaultDir)
+      const defaultDir = await ea.getDefaultWorkspace()
+      workspaceDir.value = defaultDir || ''
+      if (defaultDir) localStorage.setItem(WORKSPACE_KEY, defaultDir)
     }
 
     // 2. 加载文件列表（不含内容）
@@ -89,11 +108,11 @@ async function init(): Promise<void> {
       // 读取文件内容
       const file = files.value.find((f) => f.id === savedId)
       if (file) {
-        file.content = await api().readFile(file.path)
+        file.content = await ea.readFile(file.path)
       }
     } else if (files.value.length > 0) {
       activeFileId.value = files.value[0].id
-      files.value[0].content = await api().readFile(files.value[0].path)
+      files.value[0].content = await ea.readFile(files.value[0].path)
     }
   } catch (err) {
     ElMessage.error('初始化失败：' + String(err))
@@ -109,7 +128,9 @@ async function switchWorkspace(dir?: string): Promise<void> {
   let targetDir = dir
 
   if (!targetDir) {
-    targetDir = await api().selectDirectory()
+    const ea = api()
+    if (!ea) { ElMessage.warning('Electron API 不可用'); return }
+    targetDir = await ea.selectDirectory()
     if (!targetDir) return
   }
 
@@ -125,7 +146,9 @@ async function switchWorkspace(dir?: string): Promise<void> {
 async function loadTree(): Promise<void> {
   treeLoading.value = true
   try {
-    treeData.value = await api().listTree(workspaceDir.value)
+    const ea = api()
+    if (!ea) { treeData.value = []; return }
+    treeData.value = await ea.listTree(workspaceDir.value)
   } catch { treeData.value = [] }
   finally { treeLoading.value = false }
 }
@@ -167,7 +190,9 @@ async function copyFileItem(filePath: string): Promise<void> {
 /** 打开文件（从磁盘重新加载） */
 async function loadFiles(): Promise<void> {
   try {
-    const fileInfos = await api().listFiles(workspaceDir.value)
+    const ea = api()
+    if (!ea) { files.value = []; return }
+    const fileInfos = await ea.listFiles(workspaceDir.value)
     files.value = fileInfos.map((info) => ({
       id: pathToId(info.path),
       name: info.name,
@@ -227,11 +252,12 @@ async function loadFileFromPath(filePath: string): Promise<void> {
   }
 }
 
-/** 创建新文件 */
-async function createFile(name?: string): Promise<void> {
+/** 创建新文件，支持指定目标目录 */
+async function createFile(name?: string, targetDir?: string): Promise<void> {
+  const dir = targetDir || workspaceDir.value
   const fileName = name || `未命名-${files.value.length + 1}`
   try {
-    const filePath = await api().createFile(workspaceDir.value, fileName)
+    const filePath = await api().createFile(dir, fileName)
     const stat = await api().statFile(filePath)
 
     const newFile: MarkdownFile = {
@@ -247,6 +273,7 @@ async function createFile(name?: string): Promise<void> {
     activeFileId.value = newFile.id
     localStorage.setItem(ACTIVE_FILE_KEY, newFile.id)
     dirty.value = false
+    await loadTree()
     ElMessage.success(`已创建 "${newFile.name}"`)
   } catch {
     ElMessage.error('创建文件失败')
@@ -309,6 +336,64 @@ async function renameFile(fileId: string): Promise<void> {
   } catch {
     // 用户取消
   }
+}
+
+/** 通过路径重命名文件（不依赖 files 数组，用于树右键菜单） */
+async function renameFileByPath(filePath: string): Promise<void> {
+  const name = filePath.replace(/\\/g, '/').split('/').pop() || ''
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新文件名', '重命名', {
+      inputValue: name,
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputPattern: /^.+\.md$/,
+      inputErrorMessage: '文件名必须以 .md 结尾',
+    })
+    if (value && value !== name) {
+      const newPath = await api().renameFile(filePath, value)
+      if (newPath) {
+        // 同步 files 数组中的记录
+        const id = pathToId(filePath)
+        const existing = files.value.find(f => f.id === id)
+        if (existing) {
+          existing.name = value
+          existing.path = newPath
+          existing.id = pathToId(newPath)
+          existing.updatedAt = Date.now()
+        }
+        await loadTree()
+        ElMessage.success(`已重命名为 "${value}"`)
+      }
+    }
+  } catch { /* 取消 */ }
+}
+
+/** 通过路径删除文件（不依赖 files 数组，用于树右键菜单） */
+async function deleteFileByPath(filePath: string): Promise<boolean> {
+  const name = filePath.replace(/\\/g, '/').split('/').pop() || ''
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除 "${name}" 吗？此操作不可恢复。`,
+      '删除确认',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    const ok = await api().deleteFile(filePath)
+    if (ok) {
+      const id = pathToId(filePath)
+      files.value = files.value.filter(f => f.id !== id)
+      if (activeFileId.value === id) {
+        activeFileId.value = files.value.length > 0 ? files.value[0].id : null
+        if (activeFileId.value) {
+          const next = files.value.find(f => f.id === activeFileId.value)
+          if (next) next.content = await api().readFile(next.path)
+        }
+      }
+      await loadTree()
+      ElMessage.success(`已删除 "${name}"`)
+      return true
+    }
+    return false
+  } catch { return false }
 }
 
 /** 创建文件夹 */
@@ -420,7 +505,9 @@ export function useMarkdownFiles() {
     createDir,
     deleteDirFromTree,
     deleteFile,
+    deleteFileByPath,
     renameFile,
+    renameFileByPath,
 
     // 滚动同步
     editorScrollRatio,

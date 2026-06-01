@@ -7,3 +7,5 @@ src/components.d.ts
 *.blockmap
 _build_log.txt
 .DS_Store
+.codewhale/
+.deepseek/

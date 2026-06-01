@@ -383,12 +383,6 @@ onHeadingJump((anchorId)=>{
   for(let i=0;i<lines.length;i++){const m=lines[i].match(/^#{1,6}\s+(.+)$/);if(m){const h=m[1].toLowerCase().replace(/\s+/g,'-').replace(/[^\w\u4e00-\u9fff-]/g,'');if(h===anchorId){const t=textareaRef.value
     // 滚动到标题行
     t.scrollTop=Math.max(0,i*22-100)
-    // 选中标题行内容（不含 # 前缀）
-    let start=0;for(let j=0;j<i;j++)start+=lines[j].length+1
-    // 标题行的内容范围：#后面空格到行尾
-    const hdrStart=start+lines[i].indexOf('# ')
-    const lineEnd=start+lines[i].length
-    t.focus({preventScroll:true});requestAnimationFrame(()=>{t.selectionStart=hdrStart+2;t.selectionEnd=lineEnd})
     break}}}
 })
 

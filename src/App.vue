@@ -142,8 +142,14 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   <div class="app-container" :data-dirty="dirty" @dragover="onDragOver">
     <!-- 视图切换按钮 -->
     <div class="view-toggle" v-if="activeFileId">
-      <el-button size="small" @click="cycleView" :title="`切换至${viewMode === 'split' ? '全屏编辑' : viewMode === 'editor' ? '全屏预览' : '分栏模式'}`">
-        {{ viewMode === 'split' ? '⊞ 分栏' : viewMode === 'editor' ? '✏️ 编辑' : '👁 预览' }}
+      <el-button size="small" :type="viewMode === 'split' ? 'primary' : 'default'" @click="viewMode = 'split'">
+        <span>⊞</span> 分栏
+      </el-button>
+      <el-button size="small" :type="viewMode === 'editor' ? 'primary' : 'default'" @click="viewMode = 'editor'">
+        <span>✏️</span> 编辑
+      </el-button>
+      <el-button size="small" :type="viewMode === 'preview' ? 'primary' : 'default'" @click="viewMode = 'preview'">
+        <span>👁</span> 预览
       </el-button>
     </div>
 
@@ -187,10 +193,16 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   top: 4px;
   right: 12px;
   z-index: 9999;
+  display: flex;
+  gap: 4px;
   :deep(.el-button) {
-    height: 32px; font-size: 13px; padding: 0 14px; white-space: nowrap; min-width: 90px;
+    height: 30px; font-size: 12px; padding: 0 10px; white-space: nowrap;
     background: var(--sidebar-bg); color: var(--text-secondary); border: 1px solid var(--divider); border-radius: 6px;
+    transition: all 0.15s;
     &:hover { color: var(--primary); background: var(--hover); }
+  }
+  :deep(.el-button--primary) {
+    background: var(--primary); color: #fff; border-color: var(--primary);
   }
 }
 
