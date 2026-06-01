@@ -28,52 +28,46 @@ const headings = computed<HItem[]>(() => {
     }))
 })
 
-/** 根据 heading anchorId 查找该标题在 DOM 中的位置偏移 */
-function findHeadingOffset(container: Element, id: string): number {
-  const el = container.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
-  if (!el) return -1
-  // 计算该元素相对于可滚动容器的 offsetTop
-  let offset = el.offsetTop
-  let parent = el.offsetParent
-  while (parent && parent !== container) {
-    offset += (parent as HTMLElement).offsetTop || 0
-    parent = (parent as HTMLElement).offsetParent
-  }
-  return offset
-}
-
 function scrollTo(id: string): void {
   // 预览滚动 + 高亮（用 scrollTop 避免 scrollIntoView 对页面布局的副作用）
   const previewPanel = document.querySelector('.preview-panel__content.markdown-body') as HTMLElement | null
   if (previewPanel) {
-    const offset = findHeadingOffset(previewPanel, id)
-    if (offset >= 0) {
-      previewPanel.scrollTop = Math.max(0, offset - 60)
+    const el = previewPanel.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
+    if (el) {
+      // 用 getBoundingClientRect 精确计算相对 scroll container 的偏移
+      const containerRect = previewPanel.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      previewPanel.scrollTop += elRect.top - containerRect.top - 60
       // 高亮
-      const el = previewPanel.querySelector(`#${CSS.escape(id)}`) as HTMLElement | null
-      if (el) {
-        if (_highlightTimer) clearTimeout(_highlightTimer)
-        el.classList.add('outline-highlight')
-        _highlightTimer = setTimeout(() => {
-          el.classList.remove('outline-highlight')
-          _highlightTimer = null
-        }, 2000)
-      }
+      if (_highlightTimer) clearTimeout(_highlightTimer)
+      el.classList.add('outline-highlight')
+      _highlightTimer = setTimeout(() => {
+        el.classList.remove('outline-highlight')
+        _highlightTimer = null
+      }, 2000)
     }
   }
-  // 编辑器滚动：直接操作 DOM 滚动 textarea，不调用 focus（抢焦点会导致顶部导航消失）
+  // 编辑器滚动 + 选中高亮：用实际 line-height 计算，不调用 focus（抢焦点会导致顶部导航消失）
   const ta = document.querySelector('.editor-panel .ta') as HTMLTextAreaElement | null
   if (ta && activeFile.value?.content) {
     const lines = activeFile.value.content.split('\n')
+    // 获取 textarea 实际行高（如果没有则使用 22px 兜底）
+    const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 22
+    let charOffset = 0
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(/^(#{1,6})\s+(.+)$/)
       if (m) {
         const h = m[2].toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '')
         if (h === id) {
-          ta.scrollTop = Math.max(0, i * 22 - 100)
+          ta.scrollTop = Math.max(0, i * lineHeight - 100)
+          // 选中标题文本让编辑器内也高亮（不 focus，仅设置 selection 范围）
+          const selStart = charOffset + m[1].length + 1
+          const selEnd = charOffset + lines[i].length
+          try { ta.setSelectionRange(selStart, selEnd) } catch {}
           break
         }
       }
+      charOffset += lines[i].length + 1
     }
   }
 }
