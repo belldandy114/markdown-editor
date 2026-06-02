@@ -13,6 +13,38 @@ const sidebarTab = ref<'files' | 'outline'>('files')
 const viewMode = ref<'split' | 'editor' | 'preview'>('split')
 const previewComp = ref<InstanceType<typeof MarkdownPreview> | null>(null)
 
+// ========== 缩放 ==========
+const zoomLevel = ref(parseFloat(localStorage.getItem('md-zoom-level') || '1'))
+watch(zoomLevel, v => localStorage.setItem('md-zoom-level', String(v)))
+
+function handleWheel(e: WheelEvent) {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -0.1 : 0.1
+    zoomLevel.value = Math.max(0.5, Math.min(2.0, +(zoomLevel.value + delta).toFixed(1)))
+  }
+}
+
+// ========== 拖入文件状态 ==========
+const isDragOver = ref(false)
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+  if (e.dataTransfer?.types.includes('Files')) {
+    isDragOver.value = true
+  }
+}
+
+function onDragLeave(e: DragEvent) {
+  if (e.currentTarget === e.target || !(e.currentTarget as HTMLElement)?.contains(e.relatedTarget as Node)) {
+    isDragOver.value = false
+  }
+}
+
+function onDropClear() {
+  isDragOver.value = false
+}
+
 function cycleView() {
   const order: ('split' | 'editor' | 'preview')[] = ['split', 'editor', 'preview']
   const idx = order.indexOf(viewMode.value)
@@ -113,8 +145,6 @@ function handleGlobalKeydown(e: KeyboardEvent): void {
   if (isCtrl && e.shiftKey && e.key === 'O') { e.preventDefault(); exportWithLastSettings(true) }
 }
 
-function onDragOver(e: DragEvent) { e.preventDefault() }
-
 watch(dirty, (v) => { window.electronAPI?.setDirty(v) }, { immediate: true })
 
 onMounted(async () => {
@@ -125,6 +155,9 @@ onMounted(async () => {
   const pendingFile = await window.electronAPI?.pollOpenFile?.()
   if (pendingFile) loadFileFromPath(pendingFile)
   window.electronAPI?.onFileDropped?.((filePath) => { loadFileFromPath(filePath) })
+  window.electronAPI?.onDropReject?.((fileName) => {
+    ElMessage.warning('不支持的文件格式：' + fileName + '，仅支持 .md 文件')
+  })
   window.electronAPI?.onConfirmClose(async () => {
     try {
       await ElMessageBox.confirm('有未保存的更改，确定要关闭吗？', '未保存的更改', {
@@ -139,7 +172,15 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
 </script>
 
 <template>
-  <div class="app-container" :data-dirty="dirty" @dragover="onDragOver">
+  <div
+    class="app-container"
+    :data-dirty="dirty"
+    :style="{ '--zoom-scale': String(zoomLevel) }"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDropClear"
+    @wheel="handleWheel"
+  >
     <!-- 视图切换按钮 -->
     <div class="view-toggle" v-if="activeFileId">
       <el-button size="small" :type="viewMode === 'split' ? 'primary' : 'default'" @click="viewMode = 'split'">
@@ -152,6 +193,19 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
         <span>👁</span> 预览
       </el-button>
     </div>
+
+    <!-- 缩放指示器 -->
+    <div v-if="zoomLevel !== 1" class="zoom-badge">{{ Math.round(zoomLevel * 100) }}%</div>
+
+    <!-- 拖入覆盖层 -->
+    <Transition name="drag-fade">
+      <div v-if="isDragOver" class="drag-overlay">
+        <div class="drag-overlay__inner">
+          <div class="drag-overlay__icon">📄</div>
+          <div class="drag-overlay__text">释放以打开 .md 文件</div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 主体区域 -->
     <main class="app-main">
@@ -205,6 +259,55 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
     background: var(--primary); color: #fff; border-color: var(--primary);
   }
 }
+
+// 缩放指示器
+.zoom-badge {
+  position: fixed;
+  bottom: 40px;
+  right: 20px;
+  z-index: 9998;
+  padding: 4px 12px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  box-shadow: $shadow-2;
+  pointer-events: none;
+  animation: zoom-pop 0.2s ease;
+}
+@keyframes zoom-pop {
+  0% { transform: scale(0.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+// 拖入覆盖层
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  &__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 48px 64px;
+    border: 3px dashed var(--primary);
+    border-radius: 24px;
+    background: var(--surface);
+    box-shadow: $shadow-4;
+  }
+  &__icon { font-size: 64px; }
+  &__text { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+}
+.drag-fade-enter-active, .drag-fade-leave-active { transition: opacity 0.2s ease; }
+.drag-fade-enter-from, .drag-fade-leave-to { opacity: 0; }
 
 .app-loading { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; &__spinner{font-size:32px;color:var(--primary)} &__text{font-size:14px;color:var(--text-secondary)} }
 
