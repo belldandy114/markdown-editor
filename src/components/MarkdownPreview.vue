@@ -627,7 +627,7 @@ defineExpose({
 <style lang="scss">
 .markdown-body {
   font-family: $font-family;
-  font-size: $font-size-base;
+  font-size: calc(#{$font-size-base} * var(--zoom-scale, 1));
   line-height: 1.8;
   color: var(--text-primary);
   max-width: 100%;

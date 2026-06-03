@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // ========== 拖入文件处理（在 preload 上下文中获取完整路径） ==========
 let _onDroppedFile = null
+let _onDropReject = null
 
 document.addEventListener('drop', (e) => {
   // 检查拖入的是否为 .md 文件
@@ -16,6 +17,9 @@ document.addEventListener('drop', (e) => {
     } catch {
       // fallback: 通过 IPC 传递
     }
+  } else if (file && _onDropReject) {
+    e.preventDefault()
+    _onDropReject(file.name)
   }
 })
 
@@ -53,6 +57,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelClose: () => ipcRenderer.send('app:close-cancelled'),
   /** 注册拖入文件回调（preload 监听 drop 事件后调用） */
   onFileDropped: (fn) => { _onDroppedFile = fn },
+  /** 非 .md 文件拖入拒绝回调 */
+  onDropReject: (fn) => { _onDropReject = fn },
   /** 轮询获取"打开方式"传入的待打开文件 */
   pollOpenFile: () => ipcRenderer.invoke('file:poll-open-file'),
   // 导出功能
