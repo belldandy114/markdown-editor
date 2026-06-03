@@ -21,7 +21,7 @@ function handleWheel(e: WheelEvent) {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -0.1 : 0.1
-    zoomLevel.value = Math.max(0.5, Math.min(2.0, +(zoomLevel.value + delta).toFixed(1)))
+    zoomLevel.value = Math.max(0.5, Math.min(5.0, +(zoomLevel.value + delta).toFixed(1)))
   }
 }
 
@@ -270,7 +270,7 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   background: var(--surface);
   border: 1px solid var(--divider);
   border-radius: 12px;
-  font-size: 12px;
+  font-size: calc(12px * var(--zoom-scale, 1));
   font-weight: 600;
   color: var(--primary);
   box-shadow: $shadow-2;

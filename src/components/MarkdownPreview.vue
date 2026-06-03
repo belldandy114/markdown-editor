@@ -641,10 +641,10 @@ defineExpose({
     color: var(--text-primary);
     &:first-child { margin-top: 0; }
   }
-  h1 { font-size: 28px; padding-bottom: $spacing-sm; border-bottom: 1px solid var(--divider); }
-  h2 { font-size: 22px; padding-bottom: $spacing-xs; border-bottom: 1px solid var(--divider); }
-  h3 { font-size: 18px; }
-  h4 { font-size: 16px; }
+  h1 { font-size: calc(28px * var(--zoom-scale, 1)); padding-bottom: $spacing-sm; border-bottom: 1px solid var(--divider); }
+  h2 { font-size: calc(22px * var(--zoom-scale, 1)); padding-bottom: $spacing-xs; border-bottom: 1px solid var(--divider); }
+  h3 { font-size: calc(18px * var(--zoom-scale, 1)); }
+  h4 { font-size: calc(16px * var(--zoom-scale, 1)); }
   p { margin: $spacing-sm 0; line-height: 1.8; }
   ul, ol {
     margin: $spacing-sm 0;
@@ -668,23 +668,23 @@ defineExpose({
       display: flex; align-items: center; justify-content: space-between;
       padding: $spacing-xs $spacing-sm;
       background: #1a1a2e;
-      font-size: $font-size-xs;
+      font-size: calc(#{$font-size-xs} * var(--zoom-scale, 1));
       .code-lang {
         color: #8a8a8a; text-transform: uppercase;
-        font-family: $font-family-mono; font-size: 11px; letter-spacing: .5px;
+        font-family: $font-family-mono; font-size: calc(11px * var(--zoom-scale, 1)); letter-spacing: .5px;
       }
     }
     pre {
       margin: 0; padding: $spacing-md;
       background: #1e1e2e; overflow-x: auto;
       code {
-        font-family: $font-family-mono; font-size: $font-size-sm;
+        font-family: $font-family-mono; font-size: calc(#{$font-size-sm} * var(--zoom-scale, 1));
         line-height: 1.6; color: #e0e0e0; background: none; padding: 0;
       }
     }
   }
   code {
-    font-family: $font-family-mono; font-size: $font-size-sm;
+    font-family: $font-family-mono; font-size: calc(#{$font-size-sm} * var(--zoom-scale, 1));
     padding: 2px 6px; border-radius: $radius-sm;
     background: var(--code-bg); color: var(--primary);
   }
@@ -703,7 +703,7 @@ defineExpose({
   }
   .table-wrapper { overflow-x: auto; margin: $spacing-md 0; }
   table {
-    width: 100%; border-collapse: collapse; font-size: $font-size-sm;
+    width: 100%; border-collapse: collapse; font-size: calc(#{$font-size-sm} * var(--zoom-scale, 1));
     th, td {
       padding: $spacing-sm $spacing-md;
       border: 1px solid var(--divider); text-align: left;
