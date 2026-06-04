@@ -10,7 +10,37 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const { loading, init, createFile, switchWorkspace, workspaceDir, saveFile, flushSave, activeFileId, dirty, loadFileFromPath } = useMarkdownFiles()
 
 const sidebarTab = ref<'files' | 'outline'>('files')
-const viewMode = ref<'split' | 'editor' | 'preview'>('split')
+const VIEW_MODE_KEY = 'md-view-mode'
+const DEFAULT_MODE_KEY = 'md-default-view-mode'
+type ViewMode = 'split' | 'editor' | 'preview'
+
+/** 用户设置的启动默认模式（只读启动时用，不随切换改变） */
+const defaultViewMode = ref<ViewMode>((localStorage.getItem(DEFAULT_MODE_KEY) as ViewMode) || 'split')
+
+/** 当前显示模式：启动时读取默认值 */
+const viewMode = ref<ViewMode>(defaultViewMode.value)
+
+/** 切换模式（仅改变当前显示，不影响默认设置） */
+function setViewMode(mode: ViewMode) {
+  viewMode.value = mode
+  localStorage.setItem(VIEW_MODE_KEY, mode)
+}
+
+/** 将当前模式设为启动默认 */
+function setCurrentAsDefault() {
+  defaultViewMode.value = viewMode.value
+  localStorage.setItem(DEFAULT_MODE_KEY, viewMode.value)
+  ElMessage.success('已设「' + ({ split: '分栏', editor: '编辑', preview: '预览' }[viewMode.value]) + '」为启动默认')
+}
+
+/** 设置指定模式为启动默认（来自编辑器工具菜单） */
+function setDefaultMode(mode: ViewMode) {
+  defaultViewMode.value = mode
+  localStorage.setItem(DEFAULT_MODE_KEY, mode)
+  ElMessage.success('已设「' + ({ split: '分栏', editor: '编辑', preview: '预览' }[mode]) + '」为启动默认')
+}
+
+const showDefaultMenu = ref(false)
 const previewComp = ref<InstanceType<typeof MarkdownPreview> | null>(null)
 
 // ========== 缩放 ==========
@@ -46,9 +76,9 @@ function onDropClear() {
 }
 
 function cycleView() {
-  const order: ('split' | 'editor' | 'preview')[] = ['split', 'editor', 'preview']
+  const order: ViewMode[] = ['split', 'editor', 'preview']
   const idx = order.indexOf(viewMode.value)
-  viewMode.value = order[(idx + 1) % order.length]
+  setViewMode(order[(idx + 1) % order.length])
 }
 
 // ========== 导出 ==========
@@ -134,9 +164,9 @@ function handleGlobalKeydown(e: KeyboardEvent): void {
   if (isCtrl && e.key === 'o') { e.preventDefault(); switchWorkspace() }
   if (isCtrl && e.key === 'w') { e.preventDefault() }
   // 视图切换
-  if (isCtrl && e.shiftKey && e.key === '!') { e.preventDefault(); viewMode.value = 'editor' }
-  if (isCtrl && e.shiftKey && e.key === 'V') { e.preventDefault(); viewMode.value = 'preview' }
-  if (isCtrl && e.shiftKey && e.key === 'X') { e.preventDefault(); viewMode.value = 'split' }
+  if (isCtrl && e.shiftKey && e.key === '!') { e.preventDefault(); setViewMode('editor') }
+  if (isCtrl && e.shiftKey && e.key === 'V') { e.preventDefault(); setViewMode('preview') }
+  if (isCtrl && e.shiftKey && e.key === 'X') { e.preventDefault(); setViewMode('split') }
   // 导出快捷键
   if (isCtrl && e.shiftKey && e.key === 'H') { e.preventDefault(); doExport('html') }
   if (isCtrl && e.shiftKey && e.key === 'P') { e.preventDefault(); doExport('pdf') }
@@ -183,15 +213,35 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   >
     <!-- 视图切换按钮 -->
     <div class="view-toggle" v-if="activeFileId">
-      <el-button size="small" :type="viewMode === 'split' ? 'primary' : 'default'" @click="viewMode = 'split'">
+      <el-button size="small" :type="viewMode === 'split' ? 'primary' : 'default'" @click="setViewMode('split')">
         <span>⊞</span> 分栏
       </el-button>
-      <el-button size="small" :type="viewMode === 'editor' ? 'primary' : 'default'" @click="viewMode = 'editor'">
+      <el-button size="small" :type="viewMode === 'editor' ? 'primary' : 'default'" @click="setViewMode('editor')">
         <span>✏️</span> 编辑
       </el-button>
-      <el-button size="small" :type="viewMode === 'preview' ? 'primary' : 'default'" @click="viewMode = 'preview'">
+      <el-button size="small" :type="viewMode === 'preview' ? 'primary' : 'default'" @click="setViewMode('preview')">
         <span>👁</span> 预览
       </el-button>
+      <!-- 默认模式设置 -->
+      <el-popover
+        placement="bottom-end"
+        :width="180"
+        trigger="click"
+        v-model:visible="showDefaultMenu"
+      >
+        <template #reference>
+          <el-button size="small" class="default-btn" :class="{ 'default-btn--active': showDefaultMenu }">
+            ⚙️
+          </el-button>
+        </template>
+        <div class="default-menu">
+          <div class="default-menu__title">启动时默认模式</div>
+          <div class="default-menu__hint">当前：{{ { split: '分栏', editor: '编辑', preview: '预览' }[defaultViewMode] }}</div>
+          <el-button size="small" class="default-menu__btn" @click="setCurrentAsDefault(); showDefaultMenu = false" round>
+            设为启动默认
+          </el-button>
+        </div>
+      </el-popover>
     </div>
 
     <!-- 缩放指示器 -->
@@ -228,7 +278,7 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
 
         <div class="app-content" :class="'app-content--' + viewMode">
           <section v-show="viewMode === 'split' || viewMode === 'editor'" class="app-editor">
-            <MarkdownEditor @export="(fmt: string) => doExport(fmt as 'html'|'pdf'|'png')" @export-last="(ov: boolean) => exportWithLastSettings(ov)" />
+            <MarkdownEditor @export="(fmt: string) => doExport(fmt as 'html'|'pdf'|'png')" @export-last="(ov: boolean) => exportWithLastSettings(ov)" @set-default-view="(mode: ViewMode) => setDefaultMode(mode)" />
           </section>
           <section v-show="viewMode === 'split' || viewMode === 'preview'" class="app-preview">
             <MarkdownPreview ref="previewComp" />
@@ -257,6 +307,36 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   }
   :deep(.el-button--primary) {
     background: var(--primary); color: #fff; border-color: var(--primary);
+  }
+}
+
+// 默认模式设置按钮
+.default-btn {
+  margin-left: 4px !important;
+  font-size: 14px !important;
+  &--active {
+    background: var(--primary-container) !important;
+    color: var(--primary) !important;
+  }
+}
+
+.default-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  &__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  &__hint {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  &__btn {
+    width: 100%;
   }
 }
 
