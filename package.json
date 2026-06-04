@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.markdown-editor.app",
-    "productName": "Markdown Editor",
+    "productName": "markdown-editor",
     "directories": {
       "output": "release"
     },
@@ -28,10 +28,13 @@
     "fileAssociations": [
       {
         "ext": "md",
-        "name": "Markdown File",
+        "name": "markdown-editor",
         "description": "Markdown 文件"
       }
     ],
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
     "mac": {
       "target": [
         {
@@ -100,8 +103,7 @@
           ]
         }
       ],
-      "icon": "icon.ico",
-      "signAndEditExecutable": false
+      "icon": "icon.ico"
     },
     "nsis": {
       "artifactName": "Markdown编辑器-v${version}-安装包.${ext}",
