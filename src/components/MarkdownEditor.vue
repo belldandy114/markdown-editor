@@ -8,7 +8,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 const emit = defineEmits<{
   (e: 'export', format: 'html' | 'pdf' | 'png', overwrite?: boolean): void
   (e: 'export-last', overwrite?: boolean): void
-  (e: 'set-default-view', mode: 'split' | 'editor' | 'preview'): void
 }>()
 
 const { activeFile, saveFile, updateContent, activeFileId, dirty, switchWorkspace, workspaceDir, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, loadFileFromPath } = useMarkdownFiles()
@@ -524,7 +523,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleSearch();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='default-split'){emit('set-default-view','split');return}if(v==='default-editor'){emit('set-default-view','editor');return}if(v==='default-preview'){emit('set-default-view','preview');return}fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleSearch();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus({preventScroll:true}));return}fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">工具 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="theme">{{ theme === 'dark' ? '☀️ 浅色主题' : '🌙 深色主题' }}</el-dropdown-item>
@@ -536,10 +535,6 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
         <el-dropdown-item command="rmDup">删除重复行 (Ctrl+Shift+D)</el-dropdown-item>
         <el-dropdown-item command="markDup">标记重复行</el-dropdown-item>
         <el-dropdown-item command="copyLine">复制行 (Ctrl+D)</el-dropdown-item>
-        <el-dropdown-item divided command="">── 启动时默认 ──</el-dropdown-item>
-        <el-dropdown-item command="default-split">⊞ 分栏</el-dropdown-item>
-        <el-dropdown-item command="default-editor">✏️ 编辑</el-dropdown-item>
-        <el-dropdown-item command="default-preview">👁 预览</el-dropdown-item>
       </el-dropdown-menu></template>
     </el-dropdown>
   </div>

@@ -215,15 +215,15 @@ async function selectFile(fileId: string): Promise<void> {
   // 保存当前文件
   await flushSave()
 
-  // 切换到新文件
-  activeFileId.value = fileId
-  localStorage.setItem(ACTIVE_FILE_KEY, fileId)
-
-  // 读取内容
+  // 先读取内容，再切换文件，确保大纲/编辑器能立即拿到内容
   const file = files.value.find((f) => f.id === fileId)
   if (file && !file.content) {
     file.content = await api().readFile(file.path)
   }
+
+  // 切换到新文件
+  activeFileId.value = fileId
+  localStorage.setItem(ACTIVE_FILE_KEY, fileId)
   dirty.value = false
 }
 

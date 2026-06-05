@@ -121,7 +121,8 @@ marked.setOptions({ gfm: true, breaks: true })
 const renderer = new marked.Renderer()
 
 renderer.heading = function ({ text, depth }) {
-  const id = text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '')
+  const plainText = text.replace(/<[^>]*>/g, '')
+  const id = plainText.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fff-]/g, '')
   return `<h${depth} id="${id}">${text}</h${depth}>`
 }
 renderer.code = function ({ text, lang }) {
@@ -506,12 +507,16 @@ watch(editorScrollRatio, (r) => {
 // 大纲点击回调
 onHeadingJump((anchorId) => {
   if (isEditing.value || !previewRef.value) return
-  nextTick(() => {
-    if (previewRef.value) {
-      const el = previewRef.value.querySelector(`#${CSS.escape(anchorId)}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  })
+  const el = previewRef.value.querySelector(`#${CSS.escape(anchorId)}`) as HTMLElement | null
+  if (el) {
+    lockScroll()
+    const containerRect = previewRef.value.getBoundingClientRect()
+    const elRect = el.getBoundingClientRect()
+    previewRef.value.scrollTop += elRect.top - containerRect.top - 60
+    // 高亮
+    el.classList.add('outline-highlight')
+    setTimeout(() => el.classList.remove('outline-highlight'), 2000)
+  }
 })
 
 // 暴露给父组件用于导出

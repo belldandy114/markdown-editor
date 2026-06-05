@@ -33,13 +33,6 @@ function setCurrentAsDefault() {
   ElMessage.success('已设「' + ({ split: '分栏', editor: '编辑', preview: '预览' }[viewMode.value]) + '」为启动默认')
 }
 
-/** 设置指定模式为启动默认（来自编辑器工具菜单） */
-function setDefaultMode(mode: ViewMode) {
-  defaultViewMode.value = mode
-  localStorage.setItem(DEFAULT_MODE_KEY, mode)
-  ElMessage.success('已设「' + ({ split: '分栏', editor: '编辑', preview: '预览' }[mode]) + '」为启动默认')
-}
-
 const showDefaultMenu = ref(false)
 const previewComp = ref<InstanceType<typeof MarkdownPreview> | null>(null)
 
@@ -278,7 +271,7 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
 
         <div class="app-content" :class="'app-content--' + viewMode">
           <section v-show="viewMode === 'split' || viewMode === 'editor'" class="app-editor">
-            <MarkdownEditor @export="(fmt: string) => doExport(fmt as 'html'|'pdf'|'png')" @export-last="(ov: boolean) => exportWithLastSettings(ov)" @set-default-view="(mode: ViewMode) => setDefaultMode(mode)" />
+            <MarkdownEditor @export="(fmt: string) => doExport(fmt as 'html'|'pdf'|'png')" @export-last="(ov: boolean) => exportWithLastSettings(ov)" />
           </section>
           <section v-show="viewMode === 'split' || viewMode === 'preview'" class="app-preview">
             <MarkdownPreview ref="previewComp" />

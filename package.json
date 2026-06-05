@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor",
-  "version": "1.0.20",
+  "version": "1.0.30",
   "description": "跨平台 Markdown 编辑器，支持实时预览、文件管理、图片粘贴",
   "author": "Markdown Editor Team",
   "type": "module",
