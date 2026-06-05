@@ -32,6 +32,12 @@ export interface FileTreeNode {
   updatedAt?: number
 }
 
+/** 外部文件变更事件 */
+export interface FileChangeEvent {
+  filePath: string
+  type: 'change' | 'rename' | 'delete'
+}
+
 /** 主题模式 */
 export type ThemeMode = 'light' | 'dark'
 
@@ -67,8 +73,16 @@ export interface ElectronAPI {
   confirmClose: () => void
   cancelClose: () => void
   onFileDropped?: (fn: (filePath: string) => void) => void
+  /** 非 .md 文件拖入拒绝回调 */
+  onDropReject?: (fn: (fileName: string) => void) => void
   /** 轮询获取"打开方式"传入的待打开文件 */
   pollOpenFile?: () => Promise<string | null>
+  /** 外部文件变更事件监听 */
+  onFileChanged?: (fn: (data: FileChangeEvent) => void) => void
+  /** 工作目录变更事件监听 */
+  onWorkspaceChanged?: (fn: (dir: string) => void) => void
+  /** 通知主进程工作目录变更 */
+  setWorkspace?: (dirPath: string) => Promise<boolean>
   // 导出功能
   exportHtml: (title: string, html: string, filePath?: string) => Promise<string | null>
   exportPdf: (title: string, html: string, filePath?: string) => Promise<string | null>

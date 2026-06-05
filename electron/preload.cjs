@@ -65,4 +65,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportHtml: (title, html, filePath) => ipcRenderer.invoke('export:html', title, html, filePath),
   exportPdf: (title, html, filePath) => ipcRenderer.invoke('export:pdf', title, html, filePath),
   exportImage: (title, html, filePath) => ipcRenderer.invoke('export:image', title, html, filePath),
+  // 外部文件变更监控
+  onFileChanged: (fn) => ipcRenderer.on('file:changed', (_e, data) => fn(data)),
+  onWorkspaceChanged: (fn) => ipcRenderer.on('workspace:changed', (_e, dir) => fn(dir)),
+  setWorkspace: (dirPath) => ipcRenderer.invoke('workspace:set', dirPath),
 })

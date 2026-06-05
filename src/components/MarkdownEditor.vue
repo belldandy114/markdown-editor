@@ -10,7 +10,7 @@ const emit = defineEmits<{
   (e: 'export-last', overwrite?: boolean): void
 }>()
 
-const { activeFile, saveFile, updateContent, activeFileId, dirty, switchWorkspace, workspaceDir, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, loadFileFromPath } = useMarkdownFiles()
+const { activeFile, saveFile, updateContent, activeFileId, dirty, switchWorkspace, workspaceDir, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, loadFileFromPath, autoSaveEnabled, toggleAutoSave } = useMarkdownFiles()
 const { theme, toggleTheme } = useTheme()
 
 const content = ref('')
@@ -419,6 +419,22 @@ function handleFileCmd(cmd:string){const t=getTa();if(!t)return
   }
 }
 
+/** 从文件树拖入文件到编辑器，插入链接 */
+function onTextareaDrop(e: DragEvent) {
+  const path = e.dataTransfer?.getData('text/plain')
+  const name = e.dataTransfer?.getData('text/markdown-name')
+  if (!path || !name) return
+  e.preventDefault()
+  const ta = textareaRef.value
+  if (!ta) return
+  const selStart = ta.selectionStart
+  const selEnd = ta.selectionEnd
+  // 判断是否为图片文件
+  const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(path)
+  const linkText = isImage ? `![${name}](${path})` : `[${name}](${path})`
+  replaceRange(selStart, selEnd, linkText)
+}
+
 const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust','sql','html','css','bash','json','yaml','xml','shell','mermaid']
 </script>
 
@@ -566,11 +582,15 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
   <div class="body">
     <div class="lns"><div v-for="n in lineNumbers" :key="n" class="ln">{{n}}</div></div>
     <textarea ref="textareaRef" v-model="content" class="ta" :placeholder="activeFile?'在此输入 Markdown 内容...':'请先选择或创建一个文件'" :disabled="!activeFile" spellcheck="false"
-      @input="hi" @keydown="hk" @scroll="hs2" @paste="hp" @contextmenu="sc" @blur="onTextareaBlur" @focus="onTextareaFocus"/>
+      @input="hi" @keydown="hk" @scroll="hs2" @paste="hp" @contextmenu="sc" @blur="onTextareaBlur" @focus="onTextareaFocus"
+      @dragover.prevent @drop="onTextareaDrop"/>
   </div>
 
   <div class="ft">
     <span>Markdown</span>
+    <span class="ft-as" :class="{ 'ft-as--on': autoSaveEnabled }" @click="toggleAutoSave">
+      {{ autoSaveEnabled ? '自动保存 已开启' : '自动保存 已关闭' }}
+    </span>
     <div class="ft-sc"><span>Ctrl+N 新建</span><span>Ctrl+S 保存</span><span>Ctrl+F 查找</span><span>Ctrl+D 复制行</span></div>
   </div>
 </div>
@@ -607,6 +627,15 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
 .ta{flex:1;padding:calc(16px * var(--zoom-scale, 1));border:none;outline:none;resize:none;font-family:$font-family-mono;font-size:calc(14px * var(--zoom-scale, 1));line-height:1.6;color:var(--text-primary);background:var(--surface);tab-size:2;overflow-y:auto;&::placeholder{color:var(--text-hint)}&:disabled{cursor:not-allowed;opacity:.6}}
 .ft{display:flex;align-items:center;justify-content:space-between;padding:4px 16px;height:28px;font-size:12px;color:var(--text-hint);border-top:1px solid var(--divider);background:var(--sidebar-bg)}
 .ft-sc{display:flex;gap:14px}
+.ft-as {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-hint);
+  transition: color 0.15s;
+  user-select: none;
+  &--on { color: var(--success); }
+  &:hover { color: var(--primary); }
+}
 @media(max-width:1100px){.tb{padding:4px 6px}.tb-btn{font-size:11px;padding:3px 8px}.hdr-st{display:none}}
 @media(max-width:900px){.ft-sc{display:none}.lns{width:32px}.ta{padding:12px}}
 .custom-export-header {

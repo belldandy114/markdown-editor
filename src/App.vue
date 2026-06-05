@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
+import type { FileChangeEvent } from '@/types'
 import FileList from '@/components/FileList.vue'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import MarkdownPreview from '@/components/MarkdownPreview.vue'
 import OutlinePanel from '@/components/OutlinePanel.vue'
+import ShortcutsHelp from '@/components/ShortcutsHelp.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-const { loading, init, createFile, switchWorkspace, workspaceDir, saveFile, flushSave, activeFileId, dirty, loadFileFromPath } = useMarkdownFiles()
+const { files, loading, init, createFile, switchWorkspace, workspaceDir, saveFile, flushSave, activeFileId, dirty, loadFileFromPath, reloadFileById, reloadCurrentFile } = useMarkdownFiles()
 
 const sidebarTab = ref<'files' | 'outline'>('files')
 const VIEW_MODE_KEY = 'md-view-mode'
@@ -34,11 +36,40 @@ function setCurrentAsDefault() {
 }
 
 const showDefaultMenu = ref(false)
+const showShortcuts = ref(false)
+const focusMode = ref(false)
 const previewComp = ref<InstanceType<typeof MarkdownPreview> | null>(null)
 
 // ========== 缩放 ==========
 const zoomLevel = ref(parseFloat(localStorage.getItem('md-zoom-level') || '1'))
 watch(zoomLevel, v => localStorage.setItem('md-zoom-level', String(v)))
+
+// ========== 分栏拖拽 ==========
+const splitRatio = ref(parseFloat(localStorage.getItem('md-split-ratio') || '0.5'))
+const isDragging = ref(false)
+
+watch(splitRatio, v => localStorage.setItem('md-split-ratio', String(v)))
+
+function onDividerMouseDown(e: MouseEvent) {
+  e.preventDefault()
+  isDragging.value = true
+  const container = (e.currentTarget as HTMLElement).parentElement!
+
+  function onMouseMove(e: MouseEvent) {
+    const rect = container.getBoundingClientRect()
+    const ratio = (e.clientX - rect.left) / rect.width
+    splitRatio.value = Math.max(0.2, Math.min(0.8, ratio))
+  }
+
+  function onMouseUp() {
+    isDragging.value = false
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  document.addEventListener('mousemove', onMouseMove)
+  document.addEventListener('mouseup', onMouseUp)
+}
 
 function handleWheel(e: WheelEvent) {
   if (e.ctrlKey || e.metaKey) {
@@ -160,12 +191,17 @@ function handleGlobalKeydown(e: KeyboardEvent): void {
   if (isCtrl && e.shiftKey && e.key === '!') { e.preventDefault(); setViewMode('editor') }
   if (isCtrl && e.shiftKey && e.key === 'V') { e.preventDefault(); setViewMode('preview') }
   if (isCtrl && e.shiftKey && e.key === 'X') { e.preventDefault(); setViewMode('split') }
-  // 导出快捷键
-  if (isCtrl && e.shiftKey && e.key === 'H') { e.preventDefault(); doExport('html') }
-  if (isCtrl && e.shiftKey && e.key === 'P') { e.preventDefault(); doExport('pdf') }
-  if (isCtrl && e.shiftKey && e.key === 'G') { e.preventDefault(); doExport('png') }
-  if (isCtrl && e.shiftKey && e.key === 'E') { e.preventDefault(); exportWithLastSettings() }
-  if (isCtrl && e.shiftKey && e.key === 'O') { e.preventDefault(); exportWithLastSettings(true) }
+  // 导出快捷键（编辑器聚焦时跳过，避免与编辑器快捷键冲突）
+  const inEditor = document.activeElement?.closest('.editor-panel')
+  if (isCtrl && e.shiftKey && e.key === 'H' && !inEditor) { e.preventDefault(); doExport('html') }
+  if (isCtrl && e.shiftKey && e.key === 'P' && !inEditor) { e.preventDefault(); doExport('pdf') }
+  if (isCtrl && e.shiftKey && e.key === 'G' && !inEditor) { e.preventDefault(); doExport('png') }
+  if (isCtrl && e.shiftKey && e.key === 'E' && !inEditor) { e.preventDefault(); exportWithLastSettings() }
+  if (isCtrl && e.shiftKey && e.key === 'O' && !inEditor) { e.preventDefault(); exportWithLastSettings(true) }
+  // 快捷键速查 Ctrl+/
+  if (isCtrl && e.key === '/') { e.preventDefault(); showShortcuts.value = !showShortcuts.value }
+  // 专注模式 Ctrl+Shift+.
+  if (isCtrl && e.shiftKey && e.key === '.') { e.preventDefault(); focusMode.value = !focusMode.value }
 }
 
 watch(dirty, (v) => { window.electronAPI?.setDirty(v) }, { immediate: true })
@@ -189,6 +225,45 @@ onMounted(async () => {
       window.electronAPI?.confirmClose()
     } catch { window.electronAPI?.cancelClose() }
   })
+
+  // 外部文件变更监听
+  window.electronAPI?.onFileChanged?.((data: FileChangeEvent) => {
+    const { filePath, type } = data
+    const file = files.value.find(f => f.path === filePath)
+    if (!file) return
+
+    if (type === 'delete') {
+      files.value = files.value.filter(f => f.id !== file.id)
+      if (activeFileId.value === file.id) {
+        activeFileId.value = files.value.length > 0 ? files.value[0].id : null
+      }
+      ElMessage.warning(`文件 "${file.name}" 已被外部删除`)
+      return
+    }
+
+    if (file.id === activeFileId.value) {
+      if (!dirty.value) {
+        reloadFileById(file.id)
+      } else {
+        ElMessageBox.confirm(
+          `文件 "${file.name}" 已被外部修改。\n重新加载将丢失未保存的更改。`,
+          '文件已更改',
+          {
+            confirmButtonText: '重新加载',
+            cancelButtonText: '保留我的版本',
+            type: 'warning',
+            roundButton: true,
+          },
+        ).then(() => {
+          reloadFileById(file.id)
+        }).catch(() => {
+          // 用户选择保留当前版本
+        })
+      }
+    } else {
+      reloadFileById(file.id)
+    }
+  })
 })
 
 onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) })
@@ -197,6 +272,7 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
 <template>
   <div
     class="app-container"
+    :class="{ 'app-container--focus': focusMode }"
     :data-dirty="dirty"
     :style="{ '--zoom-scale': String(zoomLevel) }"
     @dragover="onDragOver"
@@ -250,6 +326,8 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
       </div>
     </Transition>
 
+    <ShortcutsHelp :visible="showShortcuts" @close="showShortcuts = false" />
+
     <!-- 主体区域 -->
     <main class="app-main">
       <template v-if="loading">
@@ -269,10 +347,16 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
           <OutlinePanel v-show="sidebarTab === 'outline'" />
         </aside>
 
-        <div class="app-content" :class="'app-content--' + viewMode">
+        <div class="app-content" :class="'app-content--' + viewMode" :style="{ '--split-ratio': splitRatio }">
           <section v-show="viewMode === 'split' || viewMode === 'editor'" class="app-editor">
             <MarkdownEditor @export="(fmt: string) => doExport(fmt as 'html'|'pdf'|'png')" @export-last="(ov: boolean) => exportWithLastSettings(ov)" />
           </section>
+          <div
+            v-show="viewMode === 'split'"
+            class="app-divider"
+            :class="{ 'app-divider--active': isDragging }"
+            @mousedown.prevent="onDividerMouseDown"
+          ></div>
           <section v-show="viewMode === 'split' || viewMode === 'preview'" class="app-preview">
             <MarkdownPreview ref="previewComp" />
           </section>
@@ -333,6 +417,12 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
   }
 }
 
+// 专注模式：隐藏侧边栏
+.app-container--focus {
+  .app-sidebar { display: none; }
+  .view-toggle { opacity: 0.3; &:hover { opacity: 1; } }
+}
+
 // 缩放指示器
 .zoom-badge {
   position: fixed;
@@ -391,10 +481,33 @@ onUnmounted(() => { window.removeEventListener('keydown', handleGlobalKeydown) }
 .sidebar-tab { flex:1; text-align:center; padding:10px 4px; font-size:12px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:color .15s,background .15s; user-select:none; &--active{color:var(--primary);background:var(--primary-container)} &:hover{color:var(--primary)} }
 
 .app-content { flex:1; display:flex; overflow:hidden;
-  &--split { .app-editor{width:50%} .app-preview{width:50%} }
-  &--editor { .app-editor{width:100%} .app-preview{display:none} }
-  &--preview { .app-editor{display:none} .app-preview{width:100%} }
+  &--split {
+    .app-editor { flex: 0 0 calc(var(--split-ratio, 0.5) * 100%); min-width: 0; }
+    .app-preview { flex: 1 1 0; min-width: 0; }
+  }
+  &--editor {
+    .app-editor { flex: 1; }
+    .app-preview { display: none; }
+    .app-divider { display: none; }
+  }
+  &--preview {
+    .app-editor { display: none; }
+    .app-preview { flex: 1; }
+    .app-divider { display: none; }
+  }
 }
 .app-editor,.app-preview { overflow:hidden; display:flex; flex-direction:column; }
-.app-editor { border-right:1px solid var(--divider); }
+.app-editor { }
+
+.app-divider {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  border-right: 1px solid var(--divider);
+  transition: background 0.15s, border-color 0.15s;
+  &:hover, &--active {
+    background: var(--primary);
+    border-right-color: var(--primary);
+  }
+}
 </style>

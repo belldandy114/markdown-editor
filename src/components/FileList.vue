@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
 import { ElMessageBox } from 'element-plus'
 import type { FileTreeNode } from '@/types'
+import { pathToId } from '@/utils/hash'
 import FileTreeItem from '@/components/FileTreeItem.vue'
 import {
   Plus,
@@ -126,15 +127,6 @@ const ctxActions = computed(() => {
 })
 
 // ========== 工具 ==========
-
-function pathToId(filePath: string): string {
-  let hash = 0
-  for (let i = 0; i < filePath.length; i++) {
-    hash = ((hash << 5) - hash) + filePath.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash).toString(36)
-}
 
 function formatTime(ts?: number): string {
   if (!ts) return ''
@@ -263,7 +255,7 @@ const sortLabel = computed(() => {
       />
     </div>
 
-    <!-- 新建 + 排序 -->
+    <!-- 新建 + 排序 + 刷新 -->
     <div class="file-list__actions">
       <el-button
         type="primary"
@@ -273,6 +265,9 @@ const sortLabel = computed(() => {
         @click="createFile()"
       >
         新建文件
+      </el-button>
+      <el-button text size="small" @click="loadTree(); loadFiles()" :loading="treeLoading" title="刷新文件树">
+        🔄
       </el-button>
       <div class="file-list__sort-row">
         <span class="file-list__sort-label" @click="toggleSort('name')"

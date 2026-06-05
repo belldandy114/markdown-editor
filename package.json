@@ -120,12 +120,14 @@
     "@highlightjs/vue-plugin": "^2.1.0",
     "element-plus": "^2.9.0",
     "highlight.js": "^11.11.0",
+    "katex": "^0.17.0",
     "marked": "^15.0.0",
     "mermaid": "^11.15.0",
     "turndown": "^7.2.4",
     "vue": "^3.4.0"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/node": "^22.0.0",
     "@vitejs/plugin-vue": "^5.2.0",
     "electron": "^42.1.0",

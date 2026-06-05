@@ -1,5 +1,6 @@
-import { ref, computed } from 'vue'
-import type { MarkdownFile, FileTreeNode } from '@/types'
+import { ref, computed, watch } from 'vue'
+import type { MarkdownFile, FileTreeNode, ElectronAPI } from '@/types'
+import { pathToId } from '@/utils/hash'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const WORKSPACE_KEY = 'markdown-editor-workspace'
@@ -22,6 +23,47 @@ let _scrollLock = false
 function lockScroll() { _scrollLock = true; setTimeout(() => { _scrollLock = false }, 30) }
 function isLocked() { return _scrollLock }
 
+// ========== 自动保存 ==========
+
+const AUTO_SAVE_ENABLED_KEY = 'md-autosave-enabled'
+const AUTO_SAVE_INTERVAL_KEY = 'md-autosave-interval'
+
+const autoSaveEnabled = ref(localStorage.getItem(AUTO_SAVE_ENABLED_KEY) !== 'false')
+const autoSaveInterval = ref(Number(localStorage.getItem(AUTO_SAVE_INTERVAL_KEY)) || 3000)
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearAutoSaveTimer(): void {
+  if (autoSaveTimer !== null) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+}
+
+function resetAutoSaveTimer(): void {
+  clearAutoSaveTimer()
+  if (!autoSaveEnabled.value) return
+  if (!dirty.value) return
+  if (!activeFileId.value) return
+  autoSaveTimer = setTimeout(async () => {
+    await saveFile()
+    autoSaveTimer = null
+  }, autoSaveInterval.value)
+}
+
+function toggleAutoSave(): void {
+  autoSaveEnabled.value = !autoSaveEnabled.value
+  localStorage.setItem(AUTO_SAVE_ENABLED_KEY, String(autoSaveEnabled.value))
+  if (!autoSaveEnabled.value) {
+    clearAutoSaveTimer()
+  } else if (dirty.value && activeFileId.value) {
+    resetAutoSaveTimer()
+  }
+}
+
+watch(autoSaveInterval, (val) => {
+  localStorage.setItem(AUTO_SAVE_INTERVAL_KEY, String(val))
+})
+
 function setEditorScrollRatio(r: number) { editorScrollRatio.value = r }
 function setPreviewScrollRatio(r: number) { previewScrollRatio.value = r }
 
@@ -35,19 +77,9 @@ function removeHeadingJump(fn: (id: string) => void) {
 
 // ========== 工具函数 ==========
 
-/** 根据文件路径生成 id */
-function pathToId(filePath: string): string {
-  let hash = 0
-  for (let i = 0; i < filePath.length; i++) {
-    hash = ((hash << 5) - hash) + filePath.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash).toString(36)
-}
-
 /** 获取窗口 API，返回 null 表示 Electron API 不可用 */
-function api() {
-  const ea = (window as any).electronAPI
+function api(): ElectronAPI | null {
+  const ea = window.electronAPI
   if (!ea) {
     console.warn('[useMarkdownFiles] electronAPI 不可用，请在 Electron 环境中运行')
     return null
@@ -57,7 +89,7 @@ function api() {
 
 /** 检查 Electron API 是否可用 */
 function hasApi(): boolean {
-  return !!(window as any).electronAPI
+  return !!window.electronAPI
 }
 
 // ========== 计算属性 ==========
@@ -79,9 +111,7 @@ async function init(): Promise<void> {
   try {
     const ea = api()
     if (!ea) {
-      // Electron API 不可用（浏览器开发模式），显示提示
       workspaceDir.value = '（未连接 Electron）'
-      console.warn('[useMarkdownFiles] Electron API 不可用，请在 Electron 环境中运行')
       loading.value = false
       return
     }
@@ -103,12 +133,16 @@ async function init(): Promise<void> {
 
     // 4. 恢复上次打开的文件
     const savedId = localStorage.getItem(ACTIVE_FILE_KEY)
-    if (savedId && files.value.some((f) => f.id === savedId)) {
-      activeFileId.value = savedId
-      // 读取文件内容
-      const file = files.value.find((f) => f.id === savedId)
+    if (savedId) {
+      const file = files.value.find(f => f.id === savedId || f.path === savedId)
       if (file) {
+        activeFileId.value = file.id
+        // 更新为新版 ID（路径）
+        if (savedId !== file.id) localStorage.setItem(ACTIVE_FILE_KEY, file.id)
         file.content = await ea.readFile(file.path)
+      } else if (files.value.length > 0) {
+        activeFileId.value = files.value[0].id
+        files.value[0].content = await ea.readFile(files.value[0].path)
       }
     } else if (files.value.length > 0) {
       activeFileId.value = files.value[0].id
@@ -138,6 +172,8 @@ async function switchWorkspace(dir?: string): Promise<void> {
   localStorage.setItem(WORKSPACE_KEY, targetDir)
   activeFileId.value = null
   expandedPaths.value = new Set()
+  // 通知主进程切换监控目录
+  api()?.setWorkspace?.(targetDir)
   await loadTree()
   await loadFiles()
 }
@@ -162,22 +198,26 @@ function toggleExpand(path: string): void {
 
 /** 通过文件路径打开文件（树节点点击） */
 async function openFileByPath(filePath: string): Promise<void> {
+  const ea = api()
+  if (!ea) return
   const id = pathToId(filePath)
   let file = files.value.find(f => f.id === id)
   if (!file) {
     const name = filePath.replace(/\\/g, '/').split('/').pop() || '未命名.md'
-    const stat = await api().statFile(filePath)
+    const stat = await ea.statFile(filePath)
     file = { id, name, path: filePath, content: '', createdAt: stat?.createdAt || Date.now(), updatedAt: stat?.updatedAt || Date.now() }
     files.value.unshift(file)
   }
-  if (!file.content) file.content = await api().readFile(filePath)
+  if (!file.content) file.content = await ea.readFile(filePath)
   activeFileId.value = id
   dirty.value = false
 }
 
 /** 复制文件 */
 async function copyFileItem(filePath: string): Promise<void> {
-  const newPath = await api().copyFile(filePath)
+  const ea = api()
+  if (!ea) { ElMessage.warning('Electron API 不可用'); return }
+  const newPath = await ea.copyFile(filePath)
   if (newPath) {
     await loadTree()
     await loadFiles()
@@ -211,6 +251,8 @@ async function loadFiles(): Promise<void> {
 /** 选择文件 */
 async function selectFile(fileId: string): Promise<void> {
   if (fileId === activeFileId.value) return
+  const ea = api()
+  if (!ea) return
 
   // 保存当前文件
   await flushSave()
@@ -218,7 +260,7 @@ async function selectFile(fileId: string): Promise<void> {
   // 先读取内容，再切换文件，确保大纲/编辑器能立即拿到内容
   const file = files.value.find((f) => f.id === fileId)
   if (file && !file.content) {
-    file.content = await api().readFile(file.path)
+    file.content = await ea.readFile(file.path)
   }
 
   // 切换到新文件
@@ -437,6 +479,8 @@ async function deleteDirFromTree(dirPath: string): Promise<boolean> {
 
 /** 保存当前文件到磁盘 */
 async function saveFile(content?: string): Promise<void> {
+  const ea = api()
+  if (!ea) return
   const file = files.value.find((f) => f.id === activeFileId.value)
   if (!file) return
 
@@ -444,9 +488,10 @@ async function saveFile(content?: string): Promise<void> {
   file.content = text
   file.updatedAt = Date.now()
 
-  const ok = await api().saveFile(file.path, text)
+  const ok = await ea.saveFile(file.path, text)
   if (ok) {
     dirty.value = false
+    clearAutoSaveTimer()
     ElMessage.success('已保存')
   } else {
     ElMessage.error('保存失败')
@@ -459,15 +504,38 @@ function updateContent(content: string): void {
   if (!file) return
   file.content = content
   dirty.value = true
+  resetAutoSaveTimer()
 }
 
 /** 保存未保存的内容 */
 async function flushSave(): Promise<void> {
   if (!dirty.value) return
+  const ea = api()
+  if (!ea) return
   const file = files.value.find((f) => f.id === activeFileId.value)
   if (!file) return
-  await api().saveFile(file.path, file.content)
+  await ea.saveFile(file.path, file.content)
   file.updatedAt = Date.now()
+  dirty.value = false
+  clearAutoSaveTimer()
+}
+
+// ========== 重新加载 ==========
+
+/** 从磁盘重新加载指定文件的内容 */
+async function reloadFileById(fileId: string): Promise<void> {
+  const ea = api()
+  if (!ea) return
+  const file = files.value.find(f => f.id === fileId)
+  if (!file) return
+  file.content = await ea.readFile(file.path)
+  file.updatedAt = Date.now()
+}
+
+/** 从磁盘重新加载当前文件的内容 */
+async function reloadCurrentFile(): Promise<void> {
+  if (!activeFileId.value) return
+  await reloadFileById(activeFileId.value)
   dirty.value = false
 }
 
@@ -525,5 +593,14 @@ export function useMarkdownFiles() {
     saveFile,
     updateContent,
     flushSave,
+
+    // 自动保存
+    autoSaveEnabled,
+    autoSaveInterval,
+    toggleAutoSave,
+
+    // 重新加载
+    reloadFileById,
+    reloadCurrentFile,
   }
 }

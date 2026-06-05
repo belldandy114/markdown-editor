@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FileTreeNode } from '@/types'
+import { pathToId } from '@/utils/hash'
 import { Document, FolderOpened } from '@element-plus/icons-vue'
 
 const props = defineProps<{
@@ -17,17 +18,15 @@ const emit = defineEmits<{
   contextmenu: [event: MouseEvent, node: FileTreeNode, parentDir: string]
 }>()
 
-function pathToId(filePath: string): string {
-  let hash = 0
-  for (let i = 0; i < filePath.length; i++) {
-    hash = ((hash << 5) - hash) + filePath.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash).toString(36)
-}
-
 const isExpanded = computed(() => props.expandedPaths.has(props.node.path))
 const isActive = computed(() => props.node.type === 'file' && pathToId(props.node.path) === props.activeFileId)
+
+function onDragStart(e: DragEvent) {
+  if (props.node.type !== 'file') return
+  e.dataTransfer?.setData('text/plain', props.node.path)
+  e.dataTransfer?.setData('text/markdown-name', props.node.name.replace('.md', ''))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+}
 </script>
 
 <template>
@@ -65,8 +64,10 @@ const isActive = computed(() => props.node.type === 'file' && pathToId(props.nod
       <div
         class="file-row"
         :class="{ 'file-row--active': isActive }"
+        :draggable="node.type === 'file'"
         @click="emit('file-click', node)"
         @contextmenu="emit('contextmenu', $event, node, parentDir)"
+        @dragstart="onDragStart"
       >
         <el-icon class="node-icon"><Document /></el-icon>
         <span class="file-name">{{ node.name }}</span>

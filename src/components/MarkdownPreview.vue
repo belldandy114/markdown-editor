@@ -3,6 +3,8 @@ import { ref, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.css'
+import 'katex/dist/katex.min.css'
+import katex from 'katex'
 import TurndownService from 'turndown'
 import mermaid from 'mermaid'
 
@@ -154,15 +156,65 @@ marked.use({ renderer })
 let _mermaidId = 0
 const _mermaidCache = new Map<string, string>()
 
+/** 在 Markdown 源码中预渲染 KaTeX 数学公式 */
+function preprocessMath(source: string): string {
+  // 块级公式 $$ ... $$
+  let result = source.replace(/\$\$([\s\S]*?)\$\$/g, (_match, code: string) => {
+    try {
+      const html = katex.renderToString(code.trim(), { displayMode: true, throwOnError: false })
+      return `<div class="math-block">${html}</div>`
+    } catch {
+      return `<div class="math-block math-error">${code.trim()}</div>`
+    }
+  })
+  // 行内公式 $ ... $
+  result = result.replace(/(?<!\$)\$([^$\n]+?)\$(?!\$)/g, (_match, code: string) => {
+    try {
+      const html = katex.renderToString(code.trim(), { displayMode: false, throwOnError: false })
+      return `<span class="math-inline">${html}</span>`
+    } catch {
+      return `<span class="math-inline math-error">${code.trim()}</span>`
+    }
+  })
+  return result
+}
+
+/** 生成目录 HTML（替换 [TOC] 标记） */
+function generateToc(source: string, html: string): string {
+  if (!source.includes('[TOC]') && !source.includes('<!-- TOC -->')) return html
+  // 从源码中提取标题生成目录
+  const headings: { level: number; text: string; id: string }[] = []
+  const lines = source.split('\n')
+  for (const line of lines) {
+    const m = line.match(/^(#{1,6})\s+(.+)$/)
+    if (m) {
+      const text = m[2].replace(/<[^>]*>/g, '').replace(/[*_~`]/g, '').trim()
+      const id = text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w一-鿿-]/g, '')
+      headings.push({ level: m[1].length, text, id })
+    }
+  }
+  if (!headings.length) return html
+  let tocHtml = '<div class="toc"><div class="toc__title">📑 目录</div>'
+  for (const h of headings) {
+    tocHtml += `<div class="toc__item" style="padding-left:${(h.level - 1) * 16}px"><a href="#${h.id}">${h.text}</a></div>`
+  }
+  tocHtml += '</div>'
+  return html.replace(/\[TOC\]|<!--\s*TOC\s*-->/gi, tocHtml)
+}
+
 async function compile(c: string) {
   if (!c) {
     renderedHtml.value = '<div class="preview-empty"><div class="preview-empty__icon">📝</div><p>点击编辑</p></div>'
     return
   }
   try {
-    let html = marked.parse(c) as string
-    // 预渲染 Mermaid：提取源码 → 调用 mermaid.render → 直接替换 HTML 中的 code-block
+    // 预渲染 KaTeX 数学公式
+    const mathProcessed = preprocessMath(c)
+    let html = marked.parse(mathProcessed) as string
+    // 预渲染 Mermaid
     html = await replaceMermaidInHtml(html, c)
+    // 生成目录
+    html = generateToc(c, html)
     renderedHtml.value = html
   } catch {
     renderedHtml.value = '<p class="preview-error">渲染错误</p>'
@@ -723,6 +775,46 @@ defineExpose({
   em { font-style: italic; }
   del { color: var(--text-hint); }
 
+  // ========== KaTeX 数学公式 ==========
+  .math-block {
+    margin: $spacing-md 0;
+    padding: $spacing-md;
+    overflow-x: auto;
+    text-align: center;
+    background: var(--bg);
+    border-radius: $radius-md;
+    .katex-display { margin: 0; }
+  }
+  .math-inline {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .math-error { color: var(--error); opacity: 0.7; }
+
+  // ========== TOC 目录 ==========
+  .toc {
+    margin: $spacing-md 0 $spacing-lg;
+    padding: $spacing-md $spacing-lg;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--divider);
+    border-radius: $radius-md;
+    &__title {
+      font-size: $font-size-lg;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: $spacing-sm;
+    }
+    &__item {
+      margin: 2px 0;
+      a {
+        color: var(--text-secondary);
+        font-size: $font-size-sm;
+        text-decoration: none;
+        &:hover { color: var(--primary); }
+      }
+    }
+  }
+
   .preview-empty {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; height: 300px; color: var(--text-hint);
@@ -735,7 +827,7 @@ defineExpose({
   .mermaid-wrapper {
     margin: $spacing-md 0;
     padding: $spacing-md;
-    background: #fff;
+    background: var(--surface, #fff);
     border-radius: $radius-md;
     border: 1px solid var(--divider);
     text-align: center;

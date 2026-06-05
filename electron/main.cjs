@@ -13,6 +13,70 @@ function getDefaultWorkspace() {
   return desktop
 }
 
+// ========== 文件变化监控 ==========
+
+/** 当前文件系统监控器 */
+let _watcher = null
+/** 防抖计时器 Map：filePath → timerId */
+const _debounceMap = new Map()
+
+/** 监控指定目录下的 .md 文件变化 */
+function watchWorkspace(dirPath) {
+  unwatchWorkspace()
+
+  if (!dirPath || !fs.existsSync(dirPath)) return
+
+  try {
+    _watcher = fs.watch(dirPath, { recursive: true }, (eventType, filename) => {
+      if (!filename) return
+      // 只关注 .md 文件
+      if (!filename.endsWith('.md')) return
+
+      const filePath = path.join(dirPath, filename)
+
+      // 防抖：500ms 内同一文件的重复事件只处理最后一次
+      if (_debounceMap.has(filePath)) {
+        clearTimeout(_debounceMap.get(filePath))
+      }
+
+      _debounceMap.set(filePath, setTimeout(() => {
+        _debounceMap.delete(filePath)
+
+        let type
+        if (eventType === 'change') {
+          type = 'change'
+        } else if (eventType === 'rename') {
+          type = fs.existsSync(filePath) ? 'rename' : 'delete'
+        } else {
+          return
+        }
+
+        // 向所有已打开的窗口发送事件
+        const wins = BrowserWindow.getAllWindows()
+        for (const win of wins) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('file:changed', { filePath, type })
+          }
+        }
+      }, 500))
+    })
+  } catch (err) {
+    console.error('[watchWorkspace] 监控失败:', err.message)
+  }
+}
+
+/** 关闭当前文件监控 */
+function unwatchWorkspace() {
+  if (_watcher) {
+    _watcher.close()
+    _watcher = null
+  }
+  for (const timer of _debounceMap.values()) {
+    clearTimeout(timer)
+  }
+  _debounceMap.clear()
+}
+
 // ========== IPC 处理 ==========
 
 /** 待打开文件路径（"打开方式"传入，供渲染进程轮询，解决竞态条件） */
@@ -58,7 +122,28 @@ ipcMain.handle('file:resolve-dropped', async (_event, fileName) => {
 
 /** 获取默认工作目录 */
 ipcMain.handle('file:get-default-workspace', () => {
-  return getDefaultWorkspace()
+  const dir = getDefaultWorkspace()
+  watchWorkspace(dir)
+  const wins = BrowserWindow.getAllWindows()
+  for (const win of wins) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('workspace:changed', dir)
+    }
+  }
+  return dir
+})
+
+/** 渲染进程通知工作目录变更，重启监控 */
+ipcMain.handle('workspace:set', (_event, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return false
+  watchWorkspace(dirPath)
+  const wins = BrowserWindow.getAllWindows()
+  for (const win of wins) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('workspace:changed', dirPath)
+    }
+  }
+  return true
 })
 
 /** 列出目录下所有 .md 文件 */
@@ -405,6 +490,8 @@ ipcMain.handle('window:create', () => {
 
 app.whenReady().then(() => {
   createWindow()
+  // 启动默认工作目录的文件变化监控
+  watchWorkspace(getDefaultWorkspace())
   // Windows：检查命令行参数中的 .md 文件（"打开方式"传入）
   const fileArg = process.argv.find(a => a.endsWith('.md') && fs.existsSync(a))
   if (fileArg) {
@@ -431,6 +518,7 @@ if (!gotLock) {
 }
 
 app.on('window-all-closed', () => {
+  unwatchWorkspace()
   if (process.platform !== 'darwin') {
     app.quit()
   }
