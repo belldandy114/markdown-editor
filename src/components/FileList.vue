@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
 import { ElMessageBox } from 'element-plus'
@@ -266,10 +266,10 @@ const sortLabel = computed(() => {
       >
         新建文件
       </el-button>
-      <el-button text size="small" @click="loadTree(); loadFiles()" :loading="treeLoading" title="刷新文件树">
-        🔄
-      </el-button>
       <div class="file-list__sort-row">
+        <el-button text size="small" @click="loadTree(); loadFiles()" :loading="treeLoading" title="刷新文件树">
+          🔄
+        </el-button>
         <span class="file-list__sort-label" @click="toggleSort('name')"
           :class="{ 'file-list__sort-label--active': sortBy === 'name' }">
           名称{{ sortBy === 'name' ? (sortAsc ? ' ↑' : ' ↓') : '' }}

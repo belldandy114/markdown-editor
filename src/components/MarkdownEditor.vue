@@ -379,12 +379,13 @@ watch(previewScrollRatio,(r)=>{if(isLocked()||!textareaRef.value)return;const t=
 // 大纲点击回调
 onHeadingJump((anchorId)=>{
   if(!textareaRef.value)return
+  const t=textareaRef.value
   const lines=content.value.split('\n')
-  for(let i=0;i<lines.length;i++){const m=lines[i].match(/^#{1,6}\s+(.+)$/);if(m){const h=m[1].toLowerCase().replace(/\s+/g,'-').replace(/[^\w\u4e00-\u9fff-]/g,'');if(h===anchorId){const t=textareaRef.value
-    // 滚动到标题行
-    t.scrollTop=Math.max(0,i*22-100)
-    break}}}
+  const lineHeight=parseFloat(getComputedStyle(t).lineHeight)||22
+  let charOffset=0
+  for(let i=0;i<lines.length;i++){const m=lines[i].match(/^(#{1,6})\s+(.+)$/);if(m){const h=m[2].toLowerCase().replace(/\s+/g,'-').replace(/[^\w\u4e00-\u9fff-]/g,'');if(h===anchorId){const maxScroll=t.scrollHeight-t.clientHeight;t.scrollTop=Math.min(maxScroll,Math.max(0,i*lineHeight-t.clientHeight/3));t.focus({preventScroll:true});t.selectionStart=charOffset+m[1].length+1;t.selectionEnd=charOffset+lines[i].length;break}}charOffset+=lines[i].length+1}
 })
+
 
 // ========== 撤销/重做 ==========
 const undoStack:string[]=[];const redoStack:string[]=[];const MAX_UNDO=50

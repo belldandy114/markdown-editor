@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor",
-  "version": "1.0.30",
+  "version": "1.1.1",
   "description": "跨平台 Markdown 编辑器，支持实时预览、文件管理、图片粘贴",
   "author": "Markdown Editor Team",
   "type": "module",
@@ -9,8 +9,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "electron:dev": "vite & sleep 2 && electron .",
-    "electron:build": "vite build --base ./ && electron-builder --win nsis",
+    "electron:dev": "VITE_DEV=true vite & sleep 2 && electron .",
+    "electron:build": "vite build && electron-builder --win nsis",
     "electron:build:mac": "vite build --base ./ && electron-builder --mac",
     "electron:build:all": "vite build --base ./ && electron-builder --win nsis --mac",
     "electron:preview": "vite build && electron ."
@@ -23,8 +23,12 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "icon.png"
     ],
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
     "fileAssociations": [
       {
         "ext": "md",
@@ -32,9 +36,6 @@
         "description": "Markdown 文件"
       }
     ],
-    "toolsets": {
-      "winCodeSign": "1.1.0"
-    },
     "mac": {
       "target": [
         {
@@ -52,6 +53,7 @@
           ]
         }
       ],
+      "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
@@ -112,7 +114,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Markdown 编辑器",
-      "uninstallDisplayName": "Markdown 编辑器"
+      "uninstallDisplayName": "Markdown 编辑器",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
     }
   },
   "dependencies": {

@@ -9,7 +9,7 @@ import OutlinePanel from '@/components/OutlinePanel.vue'
 import ShortcutsHelp from '@/components/ShortcutsHelp.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
-const { files, loading, init, createFile, switchWorkspace, workspaceDir, saveFile, flushSave, activeFileId, dirty, loadFileFromPath, reloadFileById, reloadCurrentFile } = useMarkdownFiles()
+const { files, loading, init, createFile, switchWorkspace, workspaceDir, saveFile, flushSave, activeFileId, dirty, loadFileFromPath, reloadFileById, reloadCurrentFile, loadTree, loadFiles } = useMarkdownFiles()
 
 const sidebarTab = ref<'files' | 'outline'>('files')
 const VIEW_MODE_KEY = 'md-view-mode'
@@ -263,6 +263,13 @@ onMounted(async () => {
     } else {
       reloadFileById(file.id)
     }
+  })
+
+  // 工作区变更监听（插件/外部工具切换目录时自动刷新）
+  window.electronAPI?.onWorkspaceChanged?.((dir: string) => {
+    workspaceDir.value = dir
+    loadTree()
+    loadFiles()
   })
 })
 

@@ -277,6 +277,10 @@ async function loadFileFromPath(filePath: string): Promise<void> {
     const dirPath = idx >= 0 ? filePath.substring(0, idx) : filePath
     workspaceDir.value = dirPath
     localStorage.setItem(WORKSPACE_KEY, dirPath)
+    activeFileId.value = null
+    expandedPaths.value = new Set()
+    api()?.setWorkspace?.(dirPath)
+    await loadTree()
     await loadFiles()
     const id = pathToId(filePath)
     const existing = files.value.find(f => f.id === id)
@@ -562,6 +566,7 @@ export function useMarkdownFiles() {
     // 工作目录
     switchWorkspace,
     loadTree,
+    loadFiles,
     toggleExpand,
 
     // 文件操作
