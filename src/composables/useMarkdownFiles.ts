@@ -136,17 +136,18 @@ async function init(): Promise<void> {
     if (savedId) {
       const file = files.value.find(f => f.id === savedId || f.path === savedId)
       if (file) {
+        // 先读取内容再设置 activeFileId，避免 watcher 拿到空内容
+        file.content = await ea.readFile(file.path)
         activeFileId.value = file.id
         // 更新为新版 ID（路径）
         if (savedId !== file.id) localStorage.setItem(ACTIVE_FILE_KEY, file.id)
-        file.content = await ea.readFile(file.path)
       } else if (files.value.length > 0) {
-        activeFileId.value = files.value[0].id
         files.value[0].content = await ea.readFile(files.value[0].path)
+        activeFileId.value = files.value[0].id
       }
     } else if (files.value.length > 0) {
-      activeFileId.value = files.value[0].id
       files.value[0].content = await ea.readFile(files.value[0].path)
+      activeFileId.value = files.value[0].id
     }
   } catch (err) {
     ElMessage.error('初始化失败：' + String(err))

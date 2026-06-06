@@ -546,6 +546,7 @@ watch(() => activeFile.value?.content, (nc) => {
 
 watch(() => activeFile.value?.id, () => {
   isEditing.value = false
+  if (activeFile.value?.content) debouncedCompile(activeFile.value.content)
   nextTick(() => { if (previewRef.value) previewRef.value.scrollTop = 0 })
 })
 
