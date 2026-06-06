@@ -544,9 +544,12 @@ watch(() => activeFile.value?.content, (nc) => {
   if (nc !== undefined && !isEditing.value) debouncedCompile(nc)
 }, { immediate: true })
 
-watch(() => activeFile.value?.id, () => {
+// 文件切换时：总是重置编辑状态并立即编译，不受 isEditing 状态干扰
+watch(activeFile, (newFile) => {
   isEditing.value = false
-  if (activeFile.value?.content) debouncedCompile(activeFile.value.content)
+  if (newFile?.content) {
+    compile(newFile.content)
+  }
   nextTick(() => { if (previewRef.value) previewRef.value.scrollTop = 0 })
 })
 
