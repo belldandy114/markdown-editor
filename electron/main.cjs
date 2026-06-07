@@ -444,7 +444,10 @@ ipcMain.handle('file:stat', (_event, filePath) => {
 // ========== 窗口创建 ==========
 
 function createWindow() {
+  const hasPendingFile = !!pendingFilePath
+
   const win = new BrowserWindow({
+    show: false,
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -459,6 +462,14 @@ function createWindow() {
       sandbox: true,
     },
   })
+
+  // 没有待打开文件时，ready-to-show 即显示窗口
+  // 有待打开文件时，等渲染进程加载完文件内容后由 IPC 通知显示
+  if (!hasPendingFile) {
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed()) win.show()
+    })
+  }
 
   win.on('close', (e) => {
     if (isDirty) { e.preventDefault(); win.webContents.send('app:confirm-close') }
@@ -487,16 +498,20 @@ function createWindow() {
 ipcMain.handle('window:create', () => {
   createWindow()
 })
+/** 渲染进程通知显示窗口（用于文件关联启动场景：先加载文件再显示，避免闪烁） */
+ipcMain.on('window:show', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win && !win.isDestroyed()) win.show()
+})
 
 app.whenReady().then(() => {
-  createWindow()
-  // 启动默认工作目录的文件变化监控
-  watchWorkspace(getDefaultWorkspace())
-  // Windows：检查命令行参数中的 .md 文件（"打开方式"传入）
+  // 先检查命令行参数中的 .md 文件，createWindow 据此决定窗口是否立即显示
   const fileArg = process.argv.find(a => a.endsWith('.md') && fs.existsSync(a))
   if (fileArg) {
     pendingFilePath = fileArg
   }
+  createWindow()
+  watchWorkspace(getDefaultWorkspace())
 })
 const gotLock = app.requestSingleInstanceLock?.()
 if (!gotLock) {

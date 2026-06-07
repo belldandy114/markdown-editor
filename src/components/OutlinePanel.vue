@@ -1,22 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
 
 interface HItem { level: number; text: string; anchorId: string }
 
-const { activeFile, jumpToHeading } = useMarkdownFiles()
+const { activeFile, activeFileId, jumpToHeading } = useMarkdownFiles()
 
-// 使用一个内部 ref 显式追踪内容变化，确保 computed 在内容首次载入时也能触发
-const contentSnapshot = ref('')
 // 高亮超时句柄，用于多次点击时清除上一次的定时器
 let _highlightTimer: ReturnType<typeof setTimeout> | null = null
 
-watch(() => activeFile.value?.content ?? '', (val) => {
-  contentSnapshot.value = val
-}, { immediate: true })
-
 const headings = computed<HItem[]>(() => {
-  const c = contentSnapshot.value
+  // 显式依赖 activeFileId，确保文件切换时 computed 强制重新求值
+  // 配合 activeFile.value?.content 追踪编辑时的内容变化
+  void activeFileId.value
+  const c = activeFile.value?.content
   if (!c) return []
   return c.split('\n')
     .map((l) => l.match(/^(#{1,6})\s+(.+)$/))

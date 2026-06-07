@@ -75,6 +75,15 @@ function removeHeadingJump(fn: (id: string) => void) {
   const i = headingCallbacks.indexOf(fn); if (i >= 0) headingCallbacks.splice(i, 1)
 }
 
+// 预览编译回调：文件切换后显式通知预览重新编译，解决 watcher 竞态
+// 直接传递内容而非依赖 computed，避免 Vue 异步更新导致的 stale 读取
+const previewCompileCallbacks: ((content: string) => void)[] = []
+function onPreviewCompile(fn: (content: string) => void) { previewCompileCallbacks.push(fn) }
+function triggerPreviewCompile() {
+  const file = files.value.find(f => f.id === activeFileId.value)
+  previewCompileCallbacks.forEach(fn => fn(file?.content || ''))
+}
+
 // ========== 工具函数 ==========
 
 /** 获取窗口 API，返回 null 表示 Electron API 不可用 */
@@ -149,6 +158,7 @@ async function init(): Promise<void> {
       files.value[0].content = await ea.readFile(files.value[0].path)
       activeFileId.value = files.value[0].id
     }
+    triggerPreviewCompile()
   } catch (err) {
     ElMessage.error('初始化失败：' + String(err))
   } finally {
@@ -212,6 +222,7 @@ async function openFileByPath(filePath: string): Promise<void> {
   if (!file.content) file.content = await ea.readFile(filePath)
   activeFileId.value = id
   dirty.value = false
+  triggerPreviewCompile()
 }
 
 /** 复制文件 */
@@ -268,6 +279,7 @@ async function selectFile(fileId: string): Promise<void> {
   activeFileId.value = fileId
   localStorage.setItem(ACTIVE_FILE_KEY, fileId)
   dirty.value = false
+  triggerPreviewCompile()
 }
 
 /** 通过文件路径直接加载并打开文件（拖入 / 打开方式关联） */
@@ -294,6 +306,7 @@ async function loadFileFromPath(filePath: string): Promise<void> {
       activeFileId.value = id
     }
     dirty.value = false
+    triggerPreviewCompile()
   } catch (err) {
     ElMessage.error('打开文件失败：' + String(err))
   }
@@ -594,6 +607,7 @@ export function useMarkdownFiles() {
     onHeadingJump,
     jumpToHeading,
     removeHeadingJump,
+    onPreviewCompile,
 
     // 保存
     saveFile,

@@ -48,7 +48,7 @@ mermaid.initialize({
 import { ElMessage } from 'element-plus'
 import { useMarkdownFiles } from '@/composables/useMarkdownFiles'
 
-const { activeFile, updateContent, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, workspaceDir } = useMarkdownFiles()
+const { activeFile, activeFileId, updateContent, editorScrollRatio, setEditorScrollRatio, previewScrollRatio, setPreviewScrollRatio, lockScroll, isLocked, onHeadingJump, removeHeadingJump, onPreviewCompile, workspaceDir } = useMarkdownFiles()
 
 const previewRef = ref<HTMLDivElement | null>(null)
 const wysiwygRef = ref<HTMLDivElement | null>(null)
@@ -540,18 +540,24 @@ function onWysiwygScroll(): void {
   setPreviewScrollRatio(ratio)
 }
 
-watch(() => activeFile.value?.content, (nc) => {
-  if (nc !== undefined && !isEditing.value) debouncedCompile(nc)
-}, { immediate: true })
-
-// 文件切换时：总是重置编辑状态并立即编译，不受 isEditing 状态干扰
-watch(activeFile, (newFile) => {
+// 显式编译回调：文件切换时由 composable 传递内容直接编译，避免 Vue watcher 竞态
+onPreviewCompile((content: string) => {
   isEditing.value = false
-  if (newFile?.content) {
-    compile(newFile.content)
-  }
+  // 清除 debounce 避免与立即编译冲突
+  if (debounceTimer.value) clearTimeout(debounceTimer.value)
+  compile(content)
+})
+
+// 文件切换时重置编辑状态和滚动
+watch(activeFileId, () => {
+  isEditing.value = false
   nextTick(() => { if (previewRef.value) previewRef.value.scrollTop = 0 })
 })
+
+// 编辑内容变化时编译（打字、撤销等）。文件切换由 onPreviewCompile 处理
+watch(() => activeFile.value?.content, (nc) => {
+  if (nc !== undefined) debouncedCompile(nc)
+}, { immediate: true })
 
 // 滚动同步：左侧编辑滚动 → 预览按比例跟随
 watch(editorScrollRatio, (r) => {
@@ -563,15 +569,19 @@ watch(editorScrollRatio, (r) => {
 // 大纲点击回调
 onHeadingJump((anchorId) => {
   if (isEditing.value || !previewRef.value) return
-  const el = previewRef.value.querySelector(`#${CSS.escape(anchorId)}`) as HTMLElement | null
+  let el = previewRef.value.querySelector(`#${CSS.escape(anchorId)}`) as HTMLElement | null
+  lockScroll()
   if (el) {
-    lockScroll()
     const containerRect = previewRef.value.getBoundingClientRect()
     const elRect = el.getBoundingClientRect()
-    previewRef.value.scrollTop += elRect.top - containerRect.top - 60
-    // 高亮
+    const elementDocTop = previewRef.value.scrollTop + (elRect.top - containerRect.top)
+    const maxScroll = Math.max(0, previewRef.value.scrollHeight - previewRef.value.clientHeight)
+    previewRef.value.scrollTop = Math.max(0, Math.min(elementDocTop - 60, maxScroll))
     el.classList.add('outline-highlight')
     setTimeout(() => el.classList.remove('outline-highlight'), 2000)
+  } else {
+    // querySelector 未命中（通常是第一个标题）→ 退回到顶部
+    previewRef.value.scrollTop = 0
   }
 })
 

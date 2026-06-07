@@ -212,7 +212,9 @@ onMounted(async () => {
   window.electronAPI?.onOpenFile((filePath) => { loadFileFromPath(filePath) })
   // 轮询获取"打开方式"传入的待打开文件（解决推送式 IPC 的竞态条件）
   const pendingFile = await window.electronAPI?.pollOpenFile?.()
-  if (pendingFile) loadFileFromPath(pendingFile)
+  if (pendingFile) await loadFileFromPath(pendingFile)
+  // 文件加载完成后显示窗口（避免双击打开时的启动闪烁）
+  window.electronAPI?.showWindow?.()
   window.electronAPI?.onFileDropped?.((filePath) => { loadFileFromPath(filePath) })
   window.electronAPI?.onDropReject?.((fileName) => {
     ElMessage.warning('不支持的文件格式：' + fileName + '，仅支持 .md 文件')
@@ -267,6 +269,10 @@ onMounted(async () => {
 
   // 工作区变更监听（插件/外部工具切换目录时自动刷新）
   window.electronAPI?.onWorkspaceChanged?.((dir: string) => {
+    // 防止与 loadFileFromPath / switchWorkspace 中的 setWorkspace 冲突
+    // 这些函数在自己调用 setWorkspace 之前已设置 workspaceDir，
+    // 如果这里重复执行 loadTree/loadFiles 会清空所有文件的 content，导致预览出现"点击编辑"
+    if (workspaceDir.value === dir) return
     workspaceDir.value = dir
     loadTree()
     loadFiles()

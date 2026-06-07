@@ -376,14 +376,38 @@ syncContent()
 // 预览滚动 → 编辑器跟随（watch reactive ref）
 watch(previewScrollRatio,(r)=>{if(isLocked()||!textareaRef.value)return;const t=textareaRef.value;lockScroll();t.scrollTop=r*(t.scrollHeight-t.clientHeight||1)})
 
+// 隐藏测量元素 — 通过与 textarea 相同样式渲染文本，精确获取像素高度
+let _measureEl: HTMLDivElement | null = null
+function getMeasureEl(): HTMLDivElement {
+  if(!_measureEl){
+    _measureEl = document.createElement('div')
+    _measureEl.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;word-break:normal;overflow-wrap:normal;tab-size:2;overflow:hidden'
+    document.body.appendChild(_measureEl)
+  }
+  return _measureEl
+}
+let _auxTa:HTMLTextAreaElement|null=null
 // 大纲点击回调
 onHeadingJump((anchorId)=>{
   if(!textareaRef.value)return
   const t=textareaRef.value
   const lines=content.value.split('\n')
-  const lineHeight=parseFloat(getComputedStyle(t).lineHeight)||22
   let charOffset=0
-  for(let i=0;i<lines.length;i++){const m=lines[i].match(/^(#{1,6})\s+(.+)$/);if(m){const h=m[2].toLowerCase().replace(/\s+/g,'-').replace(/[^\w\u4e00-\u9fff-]/g,'');if(h===anchorId){const maxScroll=t.scrollHeight-t.clientHeight;t.scrollTop=Math.min(maxScroll,Math.max(0,i*lineHeight-t.clientHeight/3));t.focus({preventScroll:true});t.selectionStart=charOffset+m[1].length+1;t.selectionEnd=charOffset+lines[i].length;break}}charOffset+=lines[i].length+1}
+  for(let i=0;i<lines.length;i++){const m=lines[i].match(/^(#{1,6})\s+(.+)$/);if(m){const h=m[2].toLowerCase().replace(/\s+/g,'-').replace(/[^\w\u4e00-\u9fff-]/g,'');if(h===anchorId){
+    // 辅助 textarea 比例法：测量完整+截断高度，比例映射到主 textarea
+    let at=_auxTa;if(!at){at=document.createElement('textarea');at.style.cssText='position:fixed;left:-9999px;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;tab-size:2;overflow:hidden';document.body.appendChild(at);_auxTa=at}
+    const s=getComputedStyle(t);at.style.fontFamily=s.fontFamily;at.style.fontSize=s.fontSize;at.style.lineHeight=s.lineHeight;at.style.padding=s.padding;at.style.boxSizing=s.boxSizing
+    const cw=t.clientWidth-parseFloat(s.paddingLeft||'0')-parseFloat(s.paddingRight||'0');at.style.width=Math.max(100,cw)+'px'
+    const padTop=parseFloat(s.paddingTop||'0'),padBot=parseFloat(s.paddingBottom||'0')
+    at.value=content.value;void at.offsetHeight;const auxFull=at.scrollHeight
+    at.value=content.value.substring(0,charOffset);void at.offsetHeight;const auxTrunc=at.scrollHeight
+    const ratio=Math.max(0,Math.min(1,(auxTrunc-padTop)/Math.max(auxFull-padTop-padBot,1)))
+    const taContentH=t.scrollHeight-padTop-padBot
+    const elementDocPos=padTop+ratio*taContentH
+    const maxScroll=t.scrollHeight-t.clientHeight
+    t.scrollTop=Math.max(0,Math.min(maxScroll,Math.round(elementDocPos-t.clientHeight*0.2)))
+    t.focus({preventScroll:true});t.selectionStart=charOffset+m[1].length+1;t.selectionEnd=charOffset+lines[i].length
+    break}}charOffset+=lines[i].length+1}
 })
 
 

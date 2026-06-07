@@ -28,6 +28,7 @@ document.addEventListener('drop', (e) => {
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   createWindow: () => ipcRenderer.invoke('window:create'),
+  showWindow: () => ipcRenderer.send('window:show'),
   selectDirectory: () => ipcRenderer.invoke('dialog:select-directory'),
   getDefaultWorkspace: () => ipcRenderer.invoke('file:get-default-workspace'),
   listFiles: (dirPath) => ipcRenderer.invoke('file:list', dirPath),
