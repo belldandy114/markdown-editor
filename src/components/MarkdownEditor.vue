@@ -144,15 +144,174 @@ const fmt: Record<string, Function> = {
   copyLine(){const t=getTa();if(!t)return;const s=t.selectionStart;const ls=content.value.lastIndexOf('\n',s-1)+1;const le=content.value.indexOf('\n',s);const e=le===-1?content.value.length:le;const l=content.value.substring(ls,e);const nv=content.value.substring(0,e)+'\n'+l+content.value.substring(e);content.value=nv;updateContent(nv);updateStats(nv);nextTick(()=>{t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=e+1+(s-ls)})},
 }
 
-const showSearch=ref(false);const sq=ref('');const smi=ref(0);const sma=ref<number[]>([]);const replaceText=ref('')
-function onSearchChange(v:any){sq.value=typeof v==='string'?v:'';doSearch()}
-function toggleSearch(){showSearch.value=!showSearch.value;if(showSearch.value)nextTick(()=>document.getElementById('es')?.focus({preventScroll:true}));else{sq.value='';sma.value=[];smi.value=0}}
-function doSearch(){if(!sq.value||!content.value){sma.value=[];smi.value=0;return}const q=sq.value.toLowerCase();const tx=content.value.toLowerCase();const m:number[]=[];let i=0;while(true){const p=tx.indexOf(q,i);if(p===-1)break;m.push(p);i=p+1}sma.value=m;smi.value=m.length?0:0;if(m.length)hl(m[0],q.length)}
-function hl(p:number,l:number){const t=getTa();if(!t)return;t.focus({preventScroll:true});t.selectionStart=p;t.selectionEnd=p+l;t.scrollTop=Math.max(0,(content.value.substring(0,p).split('\n').length-1)*22-100)}
-function nx(){if(!sma.value.length)return;smi.value=(smi.value+1)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus({preventScroll:true}),0)}
-function pv(){if(!sma.value.length)return;smi.value=(smi.value-1+sma.value.length)%sma.value.length;hl(sma.value[smi.value],sq.value.length);setTimeout(()=>getTa()?.focus({preventScroll:true}),0)}
-function replaceOne(){if(!sma.value.length||!sq.value)return;const pos=sma.value[smi.value];saveUndo();const rep=replaceText.value;const nv=content.value.substring(0,pos)+rep+content.value.substring(pos+sq.value.length);content.value=nv;updateContent(nv);updateStats(nv);sma.value=sma.value.slice(1).map(m=>m-pos+pos+rep.length-(sq.value.length-rep.length));smi.value=0;if(sma.value.length)hl(sma.value[0],rep.length)}
-function replaceAll(){if(!sma.value.length||!sq.value)return;saveUndo();const q=sq.value;const rep=replaceText.value;let result='';let last=0;let cnt=0;for(const pos of[...sma.value]){result+=content.value.substring(last,pos)+rep;last=pos+q.value.length;cnt++}result+=content.value.substring(last);content.value=result;updateContent(result);updateStats(result);sma.value=[];smi.value=0}
+const showFindPanel = ref(false)
+const showReplaceRow = ref(false)
+const findQuery = ref('')
+const replaceText = ref('')
+const caseSensitive = ref(false)
+const wrapSearch = ref(true)
+
+function toggleFind() {
+  showFindPanel.value = !showFindPanel.value
+  if (showFindPanel.value) {
+    showReplaceRow.value = false
+    autoFillFromSelection()
+    nextTick(() => focusFindInput())
+  }
+}
+
+function toggleReplace() {
+  if (!showFindPanel.value) {
+    showFindPanel.value = true
+    autoFillFromSelection()
+    nextTick(() => focusFindInput())
+  } else {
+    showReplaceRow.value = !showReplaceRow.value
+    nextTick(() => focusFindInput())
+  }
+}
+
+function autoFillFromSelection() {
+  const ta = getTa()
+  if (!ta) return
+  const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd)
+  if (sel && !findQuery.value.trim()) findQuery.value = sel
+}
+
+function closeFindPanel() {
+  showFindPanel.value = false
+  showReplaceRow.value = false
+  nextTick(() => getTa()?.focus({ preventScroll: true }))
+}
+
+function focusFindInput() {
+  if (!showFindPanel.value) return
+  const el = document.getElementById('es')
+  if (!el) return
+  const input = el.querySelector('input') || el
+  input.focus({ preventScroll: true })
+}
+
+function selectAndScroll(ta: HTMLTextAreaElement, pos: number, len: number) {
+  ta.focus({ preventScroll: true })
+  ta.selectionStart = pos
+  ta.selectionEnd = pos + len
+  const lineNum = ta.value.substring(0, pos).split('\n').length - 1
+  const zoom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--zoom-scale')) || 1
+  ta.scrollTop = Math.max(0, lineNum * 22 * zoom - 100)
+}
+
+function findNext() {
+  const ta = getTa()
+  if (!ta) return
+  if (!findQuery.value.trim()) { ElMessage.warning('请输入查找内容'); return }
+  const content = ta.value
+  const q = caseSensitive.value ? findQuery.value : findQuery.value.toLowerCase()
+  const text = caseSensitive.value ? content : content.toLowerCase()
+  let startPos = ta.selectionEnd
+  const pos = text.indexOf(q, startPos)
+  if (pos >= 0) {
+    selectAndScroll(ta, pos, q.length)
+  } else if (wrapSearch.value && startPos > 0) {
+    const pos2 = text.indexOf(q, 0)
+    if (pos2 >= 0) {
+      selectAndScroll(ta, pos2, q.length)
+      ElMessage.info('已到达文档末尾，继续从开头查找')
+    } else {
+      ElMessage.info('未找到匹配')
+      ta.selectionStart = ta.selectionEnd = ta.selectionStart
+    }
+  } else {
+    ElMessage.info('未找到匹配')
+    ta.selectionStart = ta.selectionEnd = ta.selectionStart
+  }
+}
+
+function findPrev() {
+  const ta = getTa()
+  if (!ta) return
+  if (!findQuery.value.trim()) { ElMessage.warning('请输入查找内容'); return }
+  const content = ta.value
+  const q = caseSensitive.value ? findQuery.value : findQuery.value.toLowerCase()
+  const text = caseSensitive.value ? content : content.toLowerCase()
+  let startPos = ta.selectionStart
+  if (startPos <= 0) {
+    if (wrapSearch.value) {
+      startPos = content.length
+    } else {
+      ElMessage.info('未找到匹配')
+      return
+    }
+  }
+  const beforeText = text.substring(0, startPos)
+  const pos = beforeText.lastIndexOf(q)
+  if (pos >= 0) {
+    selectAndScroll(ta, pos, q.length)
+  } else if (wrapSearch.value) {
+    const pos2 = text.lastIndexOf(q, text.length - 1)
+    if (pos2 >= 0) {
+      selectAndScroll(ta, pos2, q.length)
+      ElMessage.info('已到达文档开头，继续从末尾查找')
+    } else {
+      ElMessage.info('未找到匹配')
+      ta.selectionStart = ta.selectionEnd = ta.selectionStart
+    }
+  } else {
+    ElMessage.info('未找到匹配')
+    ta.selectionStart = ta.selectionEnd = ta.selectionStart
+  }
+}
+
+function replaceOne() {
+  const ta = getTa()
+  if (!ta || !findQuery.value) return
+  const { selectionStart, selectionEnd } = ta
+  if (selectionStart === selectionEnd) {
+    ElMessage.warning('请先查找要替换的内容')
+    return
+  }
+  const selectedText = ta.value.substring(selectionStart, selectionEnd)
+  const q = caseSensitive.value ? findQuery.value : findQuery.value.toLowerCase()
+  const sel = caseSensitive.value ? selectedText : selectedText.toLowerCase()
+  if (sel !== q || selectionEnd - selectionStart !== findQuery.value.length) {
+    ElMessage.warning('当前选中内容与查找词不匹配，请重新查找')
+    return
+  }
+  snapshot(true)
+  ta.setRangeText(replaceText.value, selectionStart, selectionEnd, 'preserve')
+  content.value = ta.value
+  updateContent(content.value)
+  updateStats(content.value)
+  nextTick(() => findNext())
+}
+
+function replaceAll() {
+  const ta = getTa()
+  if (!ta || !findQuery.value) return
+  const q = caseSensitive.value ? findQuery.value : findQuery.value.toLowerCase()
+  const text = caseSensitive.value ? ta.value : ta.value.toLowerCase()
+  if (text.indexOf(q) === -1) {
+    ElMessage.info('未找到匹配内容')
+    return
+  }
+  snapshot(true)
+  const original = ta.value
+  let result = ''
+  let lastIndex = 0
+  let p = 0
+  while (true) {
+    const pos = text.indexOf(q, p)
+    if (pos === -1) break
+    result += original.substring(lastIndex, pos) + replaceText.value
+    lastIndex = pos + findQuery.value.length
+    p = pos + 1
+  }
+  result += original.substring(lastIndex)
+  content.value = result
+  updateContent(result)
+  updateStats(result)
+  ElMessage.success('替换完成')
+}
 
 interface CI{label?:string;sc?:string;ac?:string;div?:boolean;ch?:CI[]}
 const ci:CI[]=[
@@ -243,9 +402,9 @@ function onHeaderClick(e: MouseEvent): void {
   if (!ta || savedSel.s === savedSel.e) return
   if (target === ta || ta.contains(target)) return // 点 textarea 本身不处理
 
-  // 在以下区域内点击时，操作完成后恢复选区
+  // 在以下区域内点击时，操作完成后恢复选区（排除查找/替换面板）
   const scope = target.closest('.app-header, .tb, .hdr, .editor-panel')
-  if (scope) {
+  if (scope && !target.closest('.search-replace-panel')) {
     nextTick(() => restoreSel())
   }
 }
@@ -309,7 +468,10 @@ function savePastedBlob(s:number,e:number,blob:Blob,name:string){
     if(fp){const r=`.assets/${name}`;replaceRange(s,e,`![${name}](${r})`);nextTick(()=>{const t=getTa();if(t){t.focus({preventScroll:true});t.selectionStart=t.selectionEnd=s+r.length+name.length+5}})}
   };reader.readAsDataURL(blob)
 }
-function hp(ev:ClipboardEvent){ev.preventDefault();const t=getTa();if(!t)return;const s=t.selectionStart,e=t.selectionEnd
+function hp(ev:ClipboardEvent){
+  const target = ev.target as HTMLElement
+  if (target !== textareaRef.value) return
+  ev.preventDefault();const t=getTa();if(!t)return;const s=t.selectionStart,e=t.selectionEnd
   // 1) 先检查 clipboardData.files（文件粘贴 / 截图粘贴）
   const f=ev.clipboardData?.files?.item?.(0)
   if(f&&f.type.startsWith('image/')&&f.size<10*1024*1024){const ext=f.type.split('/')[1]||'png';savePastedBlob(s,e,f,`image-${Date.now()}.${ext}`);return}
@@ -330,9 +492,31 @@ function syncContent(){if(activeFile.value){content.value=activeFile.value.conte
 function hi(e:Event){const v=(e.target as HTMLTextAreaElement).value;if(!undoDebounce){snapshot(true)}clearTimeout(undoDebounce);undoDebounce=setTimeout(()=>{undoDebounce=null},600);content.value=v;updateContent(v);updateStats(v)}
 async function hs(){await saveFile(content.value)}
 
-function hk(e:KeyboardEvent){const c=e.ctrlKey||e.metaKey
+function hk(e:KeyboardEvent){
+  const target = e.target as HTMLElement
+  const isTextarea = target === textareaRef.value
+  if (!isTextarea) {
+    const c = e.ctrlKey || e.metaKey
+    if (e.key === 'Escape' && showFindPanel.value) { e.preventDefault(); closeFindPanel(); return }
+    if (c && e.key === 's') { e.preventDefault(); hs(); return }
+    if (c && e.key === 'f') { e.preventDefault(); toggleFind(); return }
+    if (c && e.key === 'h') { e.preventDefault(); toggleReplace(); return }
+    return
+  }
+  // 查找/替换面板打开时，Enter 在 textarea 中执行查找
+  if (showFindPanel.value) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); findNext(); return
+    }
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault(); findPrev(); return
+    }
+  }
+  const c=e.ctrlKey||e.metaKey
+  if(!c&&e.key==='Escape'&&showFindPanel.value){e.preventDefault();closeFindPanel();return}
   if(c&&e.key==='s'){e.preventDefault();hs();return}
-  if((c&&e.key==='f')||(c&&e.key==='h')){e.preventDefault();toggleSearch();return}
+  if(c&&e.key==='f'){e.preventDefault();toggleFind();return}
+  if(c&&e.key==='h'){e.preventDefault();toggleReplace();return}
   if(c&&['0','1','2','3','4','5','6'].includes(e.key)){e.preventDefault();if(e.key==='0'){fmt.para();return}fmt.heading(parseInt(e.key));return}
   if(c&&!e.shiftKey&&e.key==='b'){e.preventDefault();fmt.bold();return}
   if(c&&!e.shiftKey&&e.key==='i'){e.preventDefault();fmt.italic();return}
@@ -370,7 +554,7 @@ function hs2(){if(isLocked())return;const t=textareaRef.value;if(!t)return;const
 // 同步左侧编辑器：监听 composable 状态变化（预览编辑同步回来）
 watch(()=>activeFile.value?.content,(nc)=>{if(nc!==undefined&&nc!==content.value){content.value=nc;nextTick(()=>updateStats(content.value))}})
 
-watch(activeFileId,()=>{syncContent();sq.value='';sma.value=[];showSearch.value=false})
+watch(activeFileId,()=>{syncContent()})
 syncContent()
 
 // 预览滚动 → 编辑器跟随（watch reactive ref）
@@ -465,19 +649,35 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
 
 <template>
 <div class="editor-panel">
-  <div v-if="showSearch" class="srch">
+  <!-- 统一查找/替换面板（类似记事本） -->
+  <div v-if="showFindPanel" class="srch search-replace-panel">
     <div class="srch-row">
-      <el-input id="es" :model-value="sq" size="small" placeholder="查找..." clearable @input="onSearchChange" @keydown.enter.prevent="nx" @keydown.shift.enter.prevent="pv">
+      <el-input id="es" v-model="findQuery" size="small" placeholder="查找..." clearable @keydown.enter.prevent="findNext" @keydown.shift.enter.prevent="findPrev">
         <template #prefix><span>🔍</span></template>
-        <template #suffix><span class="srch-n">{{ sma.length?smi+1:0 }}/{{ sma.length }}</span></template>
       </el-input>
-      <div class="srch-a"><el-button size="small" text @mousedown.prevent="pv" :disabled="!sma.length">▲</el-button><el-button size="small" text @mousedown.prevent="nx" :disabled="!sma.length">▼</el-button></div>
-      <el-button size="small" text @mousedown.prevent="toggleSearch">✕</el-button>
+      <div class="srch-a">
+        <el-button size="small" text native-type="button" @mousedown.prevent="findNext" :disabled="!findQuery">▼</el-button>
+        <el-button size="small" text native-type="button" @mousedown.prevent="findPrev" :disabled="!findQuery">▲</el-button>
+      </div>
+      <el-button size="small" text native-type="button" @mousedown.prevent="closeFindPanel">✕</el-button>
     </div>
-    <div class="srch-row" style="margin-top:4px">
-      <el-input :model-value="replaceText" size="small" placeholder="替换为..." clearable style="flex:1" @input="(v:string)=>replaceText=v" @keydown.enter.prevent="replaceOne"></el-input>
-      <el-button size="small" text @mousedown.prevent="replaceOne" :disabled="!sma.length" style="margin-left:4px">替换</el-button>
-      <el-button size="small" text @mousedown.prevent="replaceAll" :disabled="!sma.length" style="margin-left:2px">一键替换</el-button>
+
+    <!-- 替换行（可折叠） -->
+    <div v-if="showReplaceRow" class="srch-row" style="margin-top:4px">
+      <el-input v-model="replaceText" size="small" placeholder="替换为..." clearable style="flex:1"
+        @keydown.enter.exact.prevent="findNext"
+        @keydown.shift.enter.prevent="findPrev"
+        @keydown.ctrl.enter.prevent="replaceOne"></el-input>
+      <el-button size="small" text native-type="button" tabindex="-1" @mousedown.prevent="replaceOne" @keydown.prevent :disabled="!findQuery" style="margin-left:4px">替换</el-button>
+      <el-button size="small" text native-type="button" tabindex="-1" @mousedown.prevent="replaceAll" @keydown.prevent :disabled="!findQuery" style="margin-left:2px">全部替换</el-button>
+    </div>
+
+    <div class="srch-opts">
+      <label class="srch-opt"><input type="checkbox" v-model="caseSensitive" /> 区分大小写</label>
+      <label class="srch-opt"><input type="checkbox" v-model="wrapSearch" /> 循环查找</label>
+      <el-button size="small" text native-type="button" @click="showReplaceRow = !showReplaceRow" style="font-size:12px;margin-left:auto">
+        {{ showReplaceRow ? '收起替换' : '替换' }}
+      </el-button>
     </div>
   </div>
 
@@ -564,7 +764,7 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
       </el-dropdown-menu></template>
     </el-dropdown>
 
-    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleSearch();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus({preventScroll:true}));return}fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
+    <el-dropdown trigger="click" @command="(v:string)=>{if(v==='srch'){toggleFind();return}if(v==='theme'){toggleTheme();return}if(v==='undo'){undo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='redo'){redo();nextTick(()=>getTa()?.focus({preventScroll:true}));return}if(v==='clearFmt'){clearFormat();nextTick(()=>getTa()?.focus({preventScroll:true}));return}fmt[v]?.();nextTick(()=>getTa()?.focus({preventScroll:true}))}" @visible-change="onMenuChange">
       <el-button size="small" text class="tb-btn">工具 ▾</el-button>
       <template #dropdown><el-dropdown-menu>
         <el-dropdown-item command="theme">{{ theme === 'dark' ? '☀️ 浅色主题' : '🌙 深色主题' }}</el-dropdown-item>
@@ -626,6 +826,9 @@ const codeLangs=['javascript','typescript','python','java','c','cpp','go','rust'
 .srch{padding:6px 16px;background:var(--bg);border-bottom:1px solid var(--divider)}
 .srch-row{display:flex;align-items:center;gap:4px}:deep(.srch-row .el-input){flex:1;max-width:280px}
 .srch-n{font-size:11px;color:var(--text-hint);white-space:nowrap}.srch-a{display:flex;gap:2px}
+.srch-opts{display:flex;align-items:center;gap:12px;margin-top:4px;font-size:12px;color:var(--text-hint)}
+.srch-opt{display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+.srch-opt input{cursor:pointer}
 .tb{display:flex;align-items:center;gap:0;padding:0 12px;height:40px;background:var(--sidebar-bg);border-bottom:1px solid var(--divider)}
 .tb-btn{font-size:12px;padding:6px 10px;height:30px;color:var(--text-secondary);letter-spacing:.3px;border-radius:4px;margin:0 1px;transition:all .15s;font-weight:500;user-select:none;line-height:1;
   &:hover{background:var(--hover);color:var(--primary)}}
